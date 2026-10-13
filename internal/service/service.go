@@ -57,6 +57,9 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 	mux := http.NewServeMux()
 	reading := readingAPI{store: store, content: api, readerID: user.ID}
 	collections := collectionAPI{store: store, readerID: user.ID}
+	catalog := catalogAPI{store: store}
+	mux.HandleFunc("GET /api/v1/books", catalog.books)
+	mux.HandleFunc("GET /api/v1/categories", catalog.categories)
 	mux.HandleFunc("GET /api/v1/home", collections.home)
 	mux.HandleFunc("GET /api/v1/shelf", collections.list("shelf"))
 	mux.HandleFunc("GET /api/v1/reading", collections.list("reading"))
@@ -77,34 +80,6 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 			nickname = user.Username
 		}
 		jsonResponse(w, map[string]any{"user": map[string]string{"id": user.ID, "nickname": nickname}, "logoutUrl": config.AuthOrigin + "/logout"})
-	})
-	mux.HandleFunc("GET /api/v1/books", func(w http.ResponseWriter, r *http.Request) {
-		after, err := integer(r.URL.Query().Get("after"), 0, 0, 1<<53-1)
-		if err != nil {
-			gateway.Error(w, 400, "invalid_window", "书目起点无效")
-			return
-		}
-		limit, err := integer(r.URL.Query().Get("limit"), 24, 1, 48)
-		if err != nil {
-			gateway.Error(w, 400, "invalid_window", "每次最多加载 48 本书")
-			return
-		}
-		rows, err := store.Queries.ListBooks(r.Context(), dbgen.ListBooksParams{AfterID: after, PageLimit: limit + 1})
-		if err != nil {
-			apiError(w, err)
-			return
-		}
-		var next *int64
-		if int64(len(rows)) > limit {
-			rows = rows[:limit]
-			last := rows[len(rows)-1].ID
-			next = &last
-		}
-		books := make([]Book, 0, len(rows))
-		for _, b := range rows {
-			books = append(books, Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
-		}
-		jsonResponse(w, map[string]any{"books": books, "nextAfter": next})
 	})
 	mux.HandleFunc("GET /api/v1/books/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, err := integer(r.PathValue("id"), 0, 1, 1<<53-1)

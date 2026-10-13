@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func newStatic(assets fs.FS) (http.Handler, error) {
 		}
 		// A closed route list prevents missing API, cover, and asset requests
 		// from succeeding with index.html. All of this sits inside gateway.Wrap.
-		if url == "/" || url == "/library" || url == "/bookshelf" || pageID(url, "/book/") || pageID(url, "/read/") {
+		if url == "/" || url == "/library" || url == "/bookshelf" || pageID(url, "/book/") || pageID(url, "/read/") || catalogPage(r.URL.EscapedPath()) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 			w.Header().Set("Referrer-Policy", "same-origin")
@@ -69,4 +70,19 @@ func pageID(url, prefix string) bool {
 	}
 	_, err := integer(strings.TrimPrefix(url, prefix), 0, 1, 1<<53-1)
 	return err == nil
+}
+
+func catalogPage(escapedPath string) bool {
+	for _, prefix := range []string{"/category/", "/author/"} {
+		if !strings.HasPrefix(escapedPath, prefix) {
+			continue
+		}
+		segment := strings.TrimPrefix(escapedPath, prefix)
+		if segment == "" || strings.Contains(segment, "/") {
+			return false
+		}
+		name, err := url.PathUnescape(segment)
+		return err == nil && strings.TrimSpace(name) != "" && name != "." && name != ".." && validCatalogText(name, 200)
+	}
+	return false
 }

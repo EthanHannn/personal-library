@@ -72,6 +72,201 @@ func (q *Queries) BookDetail(ctx context.Context, id int64) (BookDetailRow, erro
 	return i, err
 }
 
+const catalogCategories = `-- name: CatalogCategories :many
+SELECT tag1, tag2, count(*) AS total FROM books
+WHERE status='APPROVED' AND tag1<>''
+GROUP BY tag1, tag2 ORDER BY tag1, total DESC, tag2
+`
+
+type CatalogCategoriesRow struct {
+	Tag1  string
+	Tag2  string
+	Total int64
+}
+
+func (q *Queries) CatalogCategories(ctx context.Context) ([]CatalogCategoriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, catalogCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CatalogCategoriesRow{}
+	for rows.Next() {
+		var i CatalogCategoriesRow
+		if err := rows.Scan(&i.Tag1, &i.Tag2, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const catalogPage = `-- name: CatalogPage :many
+WITH ordering AS (SELECT CAST(?13 AS TEXT) AS kind)
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, s.score, s.popularity, s.xiancao_count
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id CROSS JOIN ordering
+WHERE b.status='APPROVED'
+  AND (?1='' OR instr(lower(b.title),lower(?1))>0 OR instr(lower(b.author),lower(?1))>0)
+  AND (?2='' OR b.author=?2)
+  AND (?3='' OR b.tag1=?3 OR b.tag2=?3)
+  AND (?4='' OR b.tag1=?4)
+  AND (?5='' OR b.tag2=?5)
+  AND s.score>=?6 AND s.score<=?7
+  AND b.word_count>=?8 AND b.word_count<=?9
+  AND (?10=0 OR b.has_content=1)
+ORDER BY CASE WHEN ordering.kind='score' THEN s.score END DESC,
+         CASE WHEN ordering.kind='xiancao' THEN s.xiancao_count END DESC,
+         CASE WHEN ordering.kind='popularity' THEN s.popularity END DESC,
+         CASE WHEN ordering.kind='latest' THEN b.created_at END DESC,
+         CASE WHEN ordering.kind='words' THEN b.word_count END DESC,
+         CASE WHEN ordering.kind='title' THEN b.title END ASC,
+         b.id DESC
+LIMIT ?12 OFFSET ?11
+`
+
+type CatalogPageParams struct {
+	Search      interface{}
+	Author      interface{}
+	Tag         interface{}
+	Tag1        interface{}
+	Tag2        interface{}
+	MinScore    float64
+	MaxScore    float64
+	MinWords    int64
+	MaxWords    int64
+	OnlyContent interface{}
+	PageOffset  int64
+	PageLimit   int64
+	SortBy      string
+}
+
+type CatalogPageRow struct {
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+	Popularity   int64
+	XiancaoCount int64
+}
+
+// Every order ends in a unique key; page boundaries are deterministic even
+// when scores, word counts, titles or timestamps tie.
+func (q *Queries) CatalogPage(ctx context.Context, arg CatalogPageParams) ([]CatalogPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, catalogPage,
+		arg.Search,
+		arg.Author,
+		arg.Tag,
+		arg.Tag1,
+		arg.Tag2,
+		arg.MinScore,
+		arg.MaxScore,
+		arg.MinWords,
+		arg.MaxWords,
+		arg.OnlyContent,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.SortBy,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CatalogPageRow{}
+	for rows.Next() {
+		var i CatalogPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+			&i.Popularity,
+			&i.XiancaoCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const catalogStats = `-- name: CatalogStats :one
+SELECT count(*) AS total, count(DISTINCT b.author) AS authors,
+       CAST(coalesce(sum(b.has_content),0) AS INTEGER) AS readable
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+WHERE b.status='APPROVED'
+  AND (?1='' OR instr(lower(b.title),lower(?1))>0 OR instr(lower(b.author),lower(?1))>0)
+  AND (?2='' OR b.author=?2)
+  AND (?3='' OR b.tag1=?3 OR b.tag2=?3)
+  AND (?4='' OR b.tag1=?4)
+  AND (?5='' OR b.tag2=?5)
+  AND s.score>=?6 AND s.score<=?7
+  AND b.word_count>=?8 AND b.word_count<=?9
+  AND (?10=0 OR b.has_content=1)
+`
+
+type CatalogStatsParams struct {
+	Search      interface{}
+	Author      interface{}
+	Tag         interface{}
+	Tag1        interface{}
+	Tag2        interface{}
+	MinScore    float64
+	MaxScore    float64
+	MinWords    int64
+	MaxWords    int64
+	OnlyContent interface{}
+}
+
+type CatalogStatsRow struct {
+	Total    int64
+	Authors  int64
+	Readable int64
+}
+
+// Catalog queries touch only book metadata, never the chapter index or text.
+// instr is a literal substring match, including Chinese single characters and
+// %, _ and quote characters. SQLite lower also folds ASCII author names.
+func (q *Queries) CatalogStats(ctx context.Context, arg CatalogStatsParams) (CatalogStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, catalogStats,
+		arg.Search,
+		arg.Author,
+		arg.Tag,
+		arg.Tag1,
+		arg.Tag2,
+		arg.MinScore,
+		arg.MaxScore,
+		arg.MinWords,
+		arg.MaxWords,
+		arg.OnlyContent,
+	)
+	var i CatalogStatsRow
+	err := row.Scan(&i.Total, &i.Authors, &i.Readable)
+	return i, err
+}
+
 const chapterWindow = `-- name: ChapterWindow :many
 SELECT c.idx, c.title FROM chapters c
 JOIN book_contents bc ON bc.book_id=c.book_id AND bc.version=c.content_version

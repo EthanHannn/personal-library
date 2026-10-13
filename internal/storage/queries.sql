@@ -147,3 +147,50 @@ SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
 FROM books b JOIN rating_snapshots r ON r.book_id=b.id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
 ORDER BY b.created_at DESC, b.id DESC LIMIT 6;
+
+-- Catalog queries touch only book metadata, never the chapter index or text.
+-- instr is a literal substring match, including Chinese single characters and
+-- %, _ and quote characters. SQLite lower also folds ASCII author names.
+-- name: CatalogStats :one
+SELECT count(*) AS total, count(DISTINCT b.author) AS authors,
+       CAST(coalesce(sum(b.has_content),0) AS INTEGER) AS readable
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+WHERE b.status='APPROVED'
+  AND (sqlc.arg(search)='' OR instr(lower(b.title),lower(sqlc.arg(search)))>0 OR instr(lower(b.author),lower(sqlc.arg(search)))>0)
+  AND (sqlc.arg(author)='' OR b.author=sqlc.arg(author))
+  AND (sqlc.arg(tag)='' OR b.tag1=sqlc.arg(tag) OR b.tag2=sqlc.arg(tag))
+  AND (sqlc.arg(tag1)='' OR b.tag1=sqlc.arg(tag1))
+  AND (sqlc.arg(tag2)='' OR b.tag2=sqlc.arg(tag2))
+  AND s.score>=sqlc.arg(min_score) AND s.score<=sqlc.arg(max_score)
+  AND b.word_count>=sqlc.arg(min_words) AND b.word_count<=sqlc.arg(max_words)
+  AND (sqlc.arg(only_content)=0 OR b.has_content=1);
+
+-- Every order ends in a unique key; page boundaries are deterministic even
+-- when scores, word counts, titles or timestamps tie.
+-- name: CatalogPage :many
+WITH ordering AS (SELECT CAST(sqlc.arg(sort_by) AS TEXT) AS kind)
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, s.score, s.popularity, s.xiancao_count
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id CROSS JOIN ordering
+WHERE b.status='APPROVED'
+  AND (sqlc.arg(search)='' OR instr(lower(b.title),lower(sqlc.arg(search)))>0 OR instr(lower(b.author),lower(sqlc.arg(search)))>0)
+  AND (sqlc.arg(author)='' OR b.author=sqlc.arg(author))
+  AND (sqlc.arg(tag)='' OR b.tag1=sqlc.arg(tag) OR b.tag2=sqlc.arg(tag))
+  AND (sqlc.arg(tag1)='' OR b.tag1=sqlc.arg(tag1))
+  AND (sqlc.arg(tag2)='' OR b.tag2=sqlc.arg(tag2))
+  AND s.score>=sqlc.arg(min_score) AND s.score<=sqlc.arg(max_score)
+  AND b.word_count>=sqlc.arg(min_words) AND b.word_count<=sqlc.arg(max_words)
+  AND (sqlc.arg(only_content)=0 OR b.has_content=1)
+ORDER BY CASE WHEN ordering.kind='score' THEN s.score END DESC,
+         CASE WHEN ordering.kind='xiancao' THEN s.xiancao_count END DESC,
+         CASE WHEN ordering.kind='popularity' THEN s.popularity END DESC,
+         CASE WHEN ordering.kind='latest' THEN b.created_at END DESC,
+         CASE WHEN ordering.kind='words' THEN b.word_count END DESC,
+         CASE WHEN ordering.kind='title' THEN b.title END ASC,
+         b.id DESC
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CatalogCategories :many
+SELECT tag1, tag2, count(*) AS total FROM books
+WHERE status='APPROVED' AND tag1<>''
+GROUP BY tag1, tag2 ORDER BY tag1, total DESC, tag2;
