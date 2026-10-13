@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/EthanHannn/personal-library/internal/catalog"
 	"github.com/EthanHannn/personal-library/internal/gateway"
@@ -36,11 +37,36 @@ type Repository interface {
 }
 
 func New(s Repository, r *reader.Reader) (*App, error) {
-	a := &App{store: s, reader: r, requests: make(chan struct{}, 8)}
-	if _, err := rand.Read(a.key[:]); err != nil {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
+	return NewWithKey(s, r, key)
+}
+
+func NewWithKey(s Repository, r *reader.Reader, key []byte) (*App, error) {
+	if len(key) != 32 {
+		return nil, errors.New("reader signing key must be 32 bytes")
+	}
+	a := &App{store: s, reader: r, requests: make(chan struct{}, 8)}
+	copy(a.key[:], key)
 	return a, nil
+}
+
+var ErrCursor = errors.New("invalid block position")
+var ErrPosition = errors.New("invalid paragraph position")
+
+type Content struct {
+	Book           catalog.Book    `json:"book"`
+	Chapter        catalog.Chapter `json:"chapter"`
+	Text           string          `json:"text"`
+	ContentVersion string          `json:"contentVersion"`
+	NextCursor     *string         `json:"nextCursor"`
+	BlockToken     string          `json:"blockToken"`
+	BlockStart     int64           `json:"blockStart"`
+	BlockEnd       int64           `json:"blockEnd"`
+	ChapterStart   int64           `json:"chapterStart"`
+	ChapterEnd     int64           `json:"chapterEnd"`
 }
 
 func (a *App) Handler(config gateway.Config, mux *http.ServeMux, mode string) http.Handler {
@@ -130,10 +156,18 @@ func (a *App) content(w http.ResponseWriter, r *http.Request) {
 		gateway.Error(w, 400, "invalid_chapter", "章节编号无效")
 		return
 	}
-	book, chapter, f, err := a.store.Chapter(r.Context(), id, idx)
+	block, err := a.Content(r.Context(), id, idx, r.URL.Query().Get("cursor"))
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	writeJSON(w, block)
+}
+
+func (a *App) Content(ctx context.Context, id, idx int64, token string) (*Content, error) {
+	book, chapter, f, err := a.store.Chapter(ctx, id, idx)
+	if err != nil {
+		return nil, err
 	}
 	data, _ := json.Marshal(struct {
 		Decoder    string
@@ -144,25 +178,44 @@ func (a *App) content(w http.ResponseWriter, r *http.Request) {
 	version := hex.EncodeToString(hash[:])
 	c := cursor{Book: id, Chapter: idx, Version: version}
 	offset := chapter.Start
-	if token := r.URL.Query().Get("cursor"); token != "" {
+	if token != "" {
 		offset, err = a.verify(token, c)
 		if err != nil {
-			gateway.Error(w, 400, "invalid_cursor", "正文位置已失效，请重新打开章节")
-			return
+			return nil, ErrCursor
 		}
 	}
-	block, err := a.reader.Read(r.Context(), f, chapter.Start, chapter.End, offset, reader.MaxBlockBytes)
+	block, err := a.reader.Read(ctx, f, chapter.Start, chapter.End, offset, reader.MaxBlockBytes)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
+	c.Offset = offset
+	blockToken := a.sign(c)
 	var next *string
 	if block.Next != nil {
 		c.Offset = *block.Next
 		token := a.sign(c)
 		next = &token
 	}
-	writeJSON(w, map[string]any{"book": book, "chapter": chapter, "text": block.Text, "contentVersion": version, "nextCursor": next})
+	return &Content{book, chapter, block.Text, version, next, blockToken, block.Start, block.End, chapter.Start, chapter.End}, nil
+}
+
+func (a *App) ValidatePosition(ctx context.Context, id int64, p catalog.Position) error {
+	if p.Anchor == nil || p.ContentVersion == "" {
+		return ErrPosition
+	}
+	block, err := a.Content(ctx, id, p.ChapterIdx, p.Anchor.Block)
+	if err != nil {
+		return err
+	}
+	if block.ContentVersion != p.ContentVersion {
+		return ErrCursor
+	}
+	for _, paragraph := range reader.Paragraphs(block.Text) {
+		if paragraph.Start == p.Anchor.Paragraph && p.Anchor.Character >= 0 && p.Anchor.Character <= utf8.RuneCountInString(paragraph.Text) {
+			return nil
+		}
+	}
+	return ErrPosition
 }
 
 func (a *App) chapters(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +267,10 @@ func positive(raw string) (int64, error) {
 
 func fail(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrCursor):
+		gateway.Error(w, 400, "invalid_cursor", "正文位置已失效，请重新打开章节")
+	case errors.Is(err, ErrPosition):
+		gateway.Error(w, 400, "invalid_position", "阅读位置无效")
 	case errors.Is(err, catalog.ErrNotFound):
 		gateway.Error(w, 404, "not_found", "作品或章节不存在")
 	case errors.Is(err, catalog.ErrUnindexed):
@@ -232,6 +289,8 @@ func fail(w http.ResponseWriter, err error) {
 		gateway.Error(w, 503, "unavailable", "暂时无法读取，请重试")
 	}
 }
+
+func RespondError(w http.ResponseWriter, err error) { fail(w, err) }
 
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -33,6 +33,7 @@ type File struct {
 	Encoding   string `json:"encoding"`
 	Size       int64  `json:"size"`
 	ModifiedNS int64  `json:"modifiedNs,string"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 type Block struct {

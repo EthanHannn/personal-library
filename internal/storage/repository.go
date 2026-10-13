@@ -39,7 +39,7 @@ func (s *Repository) Chapter(ctx context.Context, id, idx int64) (catalog.Book, 
 	row, err := s.Queries.ReadChapter(ctx, dbgen.ReadChapterParams{BookID: id, ChapterIdx: idx})
 	b := catalog.Book{ID: row.ID, Title: row.Title, Author: row.Author, ChapterCount: row.ChapterCount}
 	c := catalog.Chapter{Index: row.Idx, Title: row.ChapterTitle, Start: row.StartOffset, End: row.EndOffset}
-	f := reader.File{Path: row.Path, Encoding: row.Encoding, Size: row.Size, ModifiedNS: row.ModifiedNs}
+	f := reader.File{Path: row.Path, Encoding: row.Encoding, Size: row.Size, ModifiedNS: row.ModifiedNs, SHA256: row.Sha256}
 	return b, c, f, notFound(err)
 }
 

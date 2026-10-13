@@ -42,11 +42,24 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 		return nil, err
 	}
 	store := storage.NewRepository(db)
-	api, err := httpapi.New(store, r)
+	key, err := store.Queries.ReaderKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	user, err := store.Queries.CurrentReader(ctx, sql.NullString{String: config.User, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	api, err := httpapi.NewWithKey(store, r, key)
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	reading := readingAPI{store: store, content: api, readerID: user.ID}
+	mux.HandleFunc("GET /api/v1/books/{id}/reader", reading.initialize)
+	mux.HandleFunc("GET /api/v1/books/{id}/directory", reading.directory)
+	mux.HandleFunc("GET /api/v1/books/{id}/progress", reading.progress)
+	mux.HandleFunc("PUT /api/v1/books/{id}/progress", reading.save)
 	mux.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
 		user, err := store.Queries.CurrentReader(r.Context(), sql.NullString{String: config.User, Valid: true})
 		if err != nil {

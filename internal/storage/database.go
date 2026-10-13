@@ -20,7 +20,9 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-const Version = 1
+const Version = 2
+
+var migrationFiles = []string{"001_library.sql", "002_reading.sql"}
 
 type Database struct {
 	Read  *sql.DB
@@ -61,10 +63,41 @@ func Connect(ctx context.Context, filename, mode string, count int) (*sql.DB, er
 	return db, nil
 }
 
-func migration() ([]byte, string, error) {
-	data, err := migrations.ReadFile("migrations/001_library.sql")
+func migration(version int) ([]byte, string, error) {
+	data, err := migrations.ReadFile("migrations/" + migrationFiles[version-1])
 	sum := sha256.Sum256(data)
 	return data, hex.EncodeToString(sum[:]), err
+}
+
+// Validate the entire contiguous history, not just the latest checksum.
+func schemaVersion(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}) (int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT version, checksum FROM schema_migrations ORDER BY version`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	version := 0
+	for rows.Next() {
+		var next int
+		var got string
+		if err := rows.Scan(&next, &got); err != nil {
+			return 0, err
+		}
+		if next != version+1 || next > Version {
+			return 0, fmt.Errorf("unsupported or incomplete schema history")
+		}
+		_, checksum, err := migration(next)
+		if err != nil {
+			return 0, err
+		}
+		if got != checksum {
+			return 0, fmt.Errorf("schema migration %d checksum mismatch", next)
+		}
+		version = next
+	}
+	return version, rows.Err()
 }
 
 // Migrate refuses populated foreign databases, including the original Prisma
@@ -90,31 +123,20 @@ func Migrate(ctx context.Context, filename string) error {
 	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL) STRICT`); err != nil {
 		return err
 	}
-	data, checksum, err := migration()
+	version, err := schemaVersion(ctx, tx)
 	if err != nil {
 		return err
 	}
-	var version int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(max(version),0) FROM schema_migrations`).Scan(&version); err != nil {
-		return err
-	}
-	if version != 0 && version != Version {
-		return fmt.Errorf("unsupported schema version %d", version)
-	}
-	if version == 0 {
+	for next := version + 1; next <= Version; next++ {
+		data, checksum, err := migration(next)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, string(data)); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations VALUES(?,?,?)`, Version, checksum, time.Now().UnixMilli()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations VALUES(?,?,?)`, next, checksum, time.Now().UnixMilli()); err != nil {
 			return err
-		}
-	} else {
-		var got string
-		if err := tx.QueryRowContext(ctx, `SELECT checksum FROM schema_migrations WHERE version=?`, Version).Scan(&got); err != nil {
-			return err
-		}
-		if got != checksum {
-			return fmt.Errorf("schema migration checksum mismatch")
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -136,18 +158,14 @@ func Open(ctx context.Context, filename string) (*Database, error) {
 		return nil, err
 	}
 	fail := func(err error) (*Database, error) { read.Close(); return nil, err }
-	_, checksum, err := migration()
+	version, err := schemaVersion(ctx, read)
 	if err != nil {
-		return fail(err)
-	}
-	var version, count int
-	var got, journal string
-	if err := read.QueryRowContext(ctx, `SELECT count(*), COALESCE(max(version),0), COALESCE(max(checksum),'') FROM schema_migrations`).Scan(&count, &version, &got); err != nil {
 		return fail(fmt.Errorf("run library migrate first: %w", err))
 	}
-	if count != 1 || version != Version || got != checksum {
+	if version != Version {
 		return fail(fmt.Errorf("unsupported or modified schema; run the matching release's migrate command"))
 	}
+	var journal string
 	if err := read.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journal); err != nil {
 		return fail(err)
 	}

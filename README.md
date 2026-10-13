@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0 后端原型已验证，当前实施 M1：版本化业务库、可恢复迁移和正式服务/前端发布骨架。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；本项目尚不能替代生产站点。
+M0、M1 已完成，当前实施 M2 完整阅读器与可靠进度。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；本项目尚不能替代生产站点。
 
 ## 开发
 
@@ -42,6 +42,11 @@ Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/library`、`/book/:i
 | `/api/v1/books/:id` | 已审核书目的基本详情 |
 | `/api/v1/books/:id/chapters?after=0&limit=100` | 当前内容版本的目录窗口 |
 | `/api/v1/books/:id/chapters/:idx/content` | 有界正文块及签名续读游标 |
+| `/api/v1/books/:id/reader?chapter=N` | 聚合首次正文、服务端进度、书架状态与邻章；显式章号优先 |
+| `/api/v1/books/:id/directory?after=0&q=标题` | 作品内按号分页及标题检索，每次最多 100 条 |
+| `/api/v1/books/:id/progress` | GET 当前进度；PUT 比较版本并原子保存 |
+
+进度 PUT 包含 `chapterIdx`、`percent`（0–1）、`contentVersion`、`anchor: {block, paragraph, character}`，以及 `baseRevision`、`deviceId`、`clientSeq`、`mutationId`。`block` 使用正文响应的 `blockToken`；段落起点和段内位置按 Unicode 码点计数。服务端验证签名、文件版本和段落范围，冲突返回 409 及当前/提交位置。每本书保留最近 128 次成功请求的原始回执，持久化设备序号防止更旧的重试覆盖新值。签名密钥保存在数据库中，随备份保留，正式服务重启不使锚点失效。
 
 HTML、脚本、API 均处于同一认证边界，使用 `private, no-store`；缺失 API/资源返回 JSON 404，SPA 回退只接受明确的页面路由。`/login`、`/register`、`/auth/signin` 固定跳回本站首页，由既有网关处理登录。`/api/health` 只在应用内部免身份，公网 nginx 路由仍须认证。浏览器端不会自行添加 `Remote-User`。
 
@@ -68,7 +73,7 @@ go run ./cmd/library migrate --db .local/m1/library.db
 go run ./cmd/library import-legacy --source .local/m0/library.db --db .local/m1/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json --portal-user owner --source-version synthetic-m0-96abf8d
 ```
 
-目标目录须先存在。`migrate` 显式创建 schema；它拒绝旧版数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
+目标目录须先存在。`migrate` 显式创建或升级 schema，当前为 v2；升级 M1 库保留全部 v1 数据及迁移校验值。它拒绝旧版 Prisma 数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
 
 导入默认每 5,000 行提交一次；`--batch-size` 最大 10,000，`--batch-pause 10ms` 可限速，`--max-batches N` 可主动停在检查点。相同命令继续执行会校验输入指纹后续传；源快照、正文、编码清单、门户用户或来源版本变化时拒绝继续。导入必须离线独占目标库。源数据异常不会静默删行或修正，修正输入后使用另一份新目标库重新演练。
 

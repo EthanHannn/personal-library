@@ -106,6 +106,22 @@ func (q *Queries) CurrentReader(ctx context.Context, portalUser sql.NullString) 
 	return i, err
 }
 
+const inShelf = `-- name: InShelf :one
+SELECT EXISTS(SELECT 1 FROM shelf_entries WHERE reader_id=? AND book_id=?) AS in_shelf
+`
+
+type InShelfParams struct {
+	ReaderID string
+	BookID   int64
+}
+
+func (q *Queries) InShelf(ctx context.Context, arg InShelfParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, inShelf, arg.ReaderID, arg.BookID)
+	var in_shelf int64
+	err := row.Scan(&in_shelf)
+	return in_shelf, err
+}
+
 const listBooks = `-- name: ListBooks :many
 SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score
@@ -164,9 +180,103 @@ func (q *Queries) ListBooks(ctx context.Context, arg ListBooksParams) ([]ListBoo
 	return items, nil
 }
 
+const previousChapter = `-- name: PreviousChapter :many
+SELECT c.idx, c.title FROM chapters c
+JOIN book_contents bc ON bc.book_id=c.book_id AND bc.version=c.content_version
+WHERE c.book_id=?1 AND bc.is_current=1 AND c.idx<?2
+ORDER BY c.idx DESC LIMIT 1
+`
+
+type PreviousChapterParams struct {
+	BookID     int64
+	ChapterIdx int64
+}
+
+type PreviousChapterRow struct {
+	Idx   int64
+	Title string
+}
+
+func (q *Queries) PreviousChapter(ctx context.Context, arg PreviousChapterParams) ([]PreviousChapterRow, error) {
+	rows, err := q.db.QueryContext(ctx, previousChapter, arg.BookID, arg.ChapterIdx)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PreviousChapterRow{}
+	for rows.Next() {
+		var i PreviousChapterRow
+		if err := rows.Scan(&i.Idx, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const progressReceipt = `-- name: ProgressReceipt :one
+SELECT request_hash, response FROM progress_mutations WHERE reader_id=? AND book_id=? AND mutation_id=?
+`
+
+type ProgressReceiptParams struct {
+	ReaderID   string
+	BookID     int64
+	MutationID string
+}
+
+type ProgressReceiptRow struct {
+	RequestHash string
+	Response    string
+}
+
+func (q *Queries) ProgressReceipt(ctx context.Context, arg ProgressReceiptParams) (ProgressReceiptRow, error) {
+	row := q.db.QueryRowContext(ctx, progressReceipt, arg.ReaderID, arg.BookID, arg.MutationID)
+	var i ProgressReceiptRow
+	err := row.Scan(&i.RequestHash, &i.Response)
+	return i, err
+}
+
+const progressSequence = `-- name: ProgressSequence :one
+SELECT last_seq FROM progress_devices WHERE reader_id=? AND book_id=? AND device_id=?
+`
+
+type ProgressSequenceParams struct {
+	ReaderID string
+	BookID   int64
+	DeviceID string
+}
+
+func (q *Queries) ProgressSequence(ctx context.Context, arg ProgressSequenceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, progressSequence, arg.ReaderID, arg.BookID, arg.DeviceID)
+	var last_seq int64
+	err := row.Scan(&last_seq)
+	return last_seq, err
+}
+
+const pruneReceipts = `-- name: PruneReceipts :exec
+DELETE FROM progress_mutations WHERE reader_id=? AND book_id=? AND revision<=?
+`
+
+type PruneReceiptsParams struct {
+	ReaderID string
+	BookID   int64
+	Revision int64
+}
+
+func (q *Queries) PruneReceipts(ctx context.Context, arg PruneReceiptsParams) error {
+	_, err := q.db.ExecContext(ctx, pruneReceipts, arg.ReaderID, arg.BookID, arg.Revision)
+	return err
+}
+
 const readChapter = `-- name: ReadChapter :one
 SELECT b.id, b.title, b.author, b.chapter_count, c.idx, c.title AS chapter_title,
-       c.start_offset, c.end_offset, f.path, f.encoding, f.size, f.modified_ns
+       c.start_offset, c.end_offset, f.path, f.encoding, f.size, f.modified_ns, f.sha256
 FROM books b
 JOIN book_contents bc ON bc.book_id=b.id AND bc.is_current=1
 JOIN chapters c ON c.book_id=bc.book_id AND c.content_version=bc.version
@@ -193,6 +303,7 @@ type ReadChapterRow struct {
 	Encoding     string
 	Size         int64
 	ModifiedNs   int64
+	Sha256       string
 }
 
 func (q *Queries) ReadChapter(ctx context.Context, arg ReadChapterParams) (ReadChapterRow, error) {
@@ -211,6 +322,7 @@ func (q *Queries) ReadChapter(ctx context.Context, arg ReadChapterParams) (ReadC
 		&i.Encoding,
 		&i.Size,
 		&i.ModifiedNs,
+		&i.Sha256,
 	)
 	return i, err
 }
@@ -237,4 +349,178 @@ func (q *Queries) ReadableBook(ctx context.Context, id int64) (ReadableBookRow, 
 		&i.ChapterCount,
 	)
 	return i, err
+}
+
+const readerKey = `-- name: ReaderKey :one
+SELECT signing_key FROM reader_keys WHERE id=1
+`
+
+func (q *Queries) ReaderKey(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, readerKey)
+	var signing_key []byte
+	err := row.Scan(&signing_key)
+	return signing_key, err
+}
+
+const readingProgress = `-- name: ReadingProgress :one
+SELECT chapter_idx, percent, updated_at, content_version, anchor, revision
+FROM reading_progress WHERE reader_id=? AND book_id=?
+`
+
+type ReadingProgressParams struct {
+	ReaderID string
+	BookID   int64
+}
+
+type ReadingProgressRow struct {
+	ChapterIdx     int64
+	Percent        float64
+	UpdatedAt      int64
+	ContentVersion sql.NullString
+	Anchor         sql.NullString
+	Revision       int64
+}
+
+func (q *Queries) ReadingProgress(ctx context.Context, arg ReadingProgressParams) (ReadingProgressRow, error) {
+	row := q.db.QueryRowContext(ctx, readingProgress, arg.ReaderID, arg.BookID)
+	var i ReadingProgressRow
+	err := row.Scan(
+		&i.ChapterIdx,
+		&i.Percent,
+		&i.UpdatedAt,
+		&i.ContentVersion,
+		&i.Anchor,
+		&i.Revision,
+	)
+	return i, err
+}
+
+const saveProgress = `-- name: SaveProgress :exec
+INSERT INTO reading_progress(id,reader_id,book_id,chapter_idx,percent,updated_at,content_version,anchor,revision)
+VALUES(?,?,?,?,?,?,?,?,?)
+ON CONFLICT(reader_id,book_id) DO UPDATE SET chapter_idx=excluded.chapter_idx,
+percent=excluded.percent,updated_at=excluded.updated_at,content_version=excluded.content_version,
+anchor=excluded.anchor,revision=excluded.revision
+`
+
+type SaveProgressParams struct {
+	ID             string
+	ReaderID       string
+	BookID         int64
+	ChapterIdx     int64
+	Percent        float64
+	UpdatedAt      int64
+	ContentVersion sql.NullString
+	Anchor         sql.NullString
+	Revision       int64
+}
+
+func (q *Queries) SaveProgress(ctx context.Context, arg SaveProgressParams) error {
+	_, err := q.db.ExecContext(ctx, saveProgress,
+		arg.ID,
+		arg.ReaderID,
+		arg.BookID,
+		arg.ChapterIdx,
+		arg.Percent,
+		arg.UpdatedAt,
+		arg.ContentVersion,
+		arg.Anchor,
+		arg.Revision,
+	)
+	return err
+}
+
+const saveReceipt = `-- name: SaveReceipt :exec
+INSERT INTO progress_mutations(reader_id,book_id,mutation_id,request_hash,revision,response) VALUES(?,?,?,?,?,?)
+`
+
+type SaveReceiptParams struct {
+	ReaderID    string
+	BookID      int64
+	MutationID  string
+	RequestHash string
+	Revision    int64
+	Response    string
+}
+
+func (q *Queries) SaveReceipt(ctx context.Context, arg SaveReceiptParams) error {
+	_, err := q.db.ExecContext(ctx, saveReceipt,
+		arg.ReaderID,
+		arg.BookID,
+		arg.MutationID,
+		arg.RequestHash,
+		arg.Revision,
+		arg.Response,
+	)
+	return err
+}
+
+const saveSequence = `-- name: SaveSequence :exec
+INSERT INTO progress_devices(reader_id,book_id,device_id,last_seq) VALUES(?,?,?,?)
+ON CONFLICT(reader_id,book_id,device_id) DO UPDATE SET last_seq=excluded.last_seq
+`
+
+type SaveSequenceParams struct {
+	ReaderID string
+	BookID   int64
+	DeviceID string
+	LastSeq  int64
+}
+
+func (q *Queries) SaveSequence(ctx context.Context, arg SaveSequenceParams) error {
+	_, err := q.db.ExecContext(ctx, saveSequence,
+		arg.ReaderID,
+		arg.BookID,
+		arg.DeviceID,
+		arg.LastSeq,
+	)
+	return err
+}
+
+const searchChapters = `-- name: SearchChapters :many
+SELECT c.idx, c.title FROM chapters c
+JOIN book_contents bc ON bc.book_id=c.book_id AND bc.version=c.content_version
+WHERE c.book_id=?1 AND bc.is_current=1 AND c.idx>?2
+AND instr(c.title,?3)>0
+ORDER BY c.idx LIMIT ?4
+`
+
+type SearchChaptersParams struct {
+	BookID    int64
+	AfterIdx  int64
+	Query     string
+	PageLimit int64
+}
+
+type SearchChaptersRow struct {
+	Idx   int64
+	Title string
+}
+
+func (q *Queries) SearchChapters(ctx context.Context, arg SearchChaptersParams) ([]SearchChaptersRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchChapters,
+		arg.BookID,
+		arg.AfterIdx,
+		arg.Query,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchChaptersRow{}
+	for rows.Next() {
+		var i SearchChaptersRow
+		if err := rows.Scan(&i.Idx, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
