@@ -16,6 +16,28 @@ export interface Identity {
   logoutUrl: string
 }
 
+export interface ProgressSummary { chapterIdx: number; percent: number; updatedAt: number }
+export interface CollectionEntry {
+  book: Book
+  inShelf: boolean
+  addedAt: number | null
+  progress: ProgressSummary | null
+}
+export interface CollectionPage {
+  entries: CollectionEntry[]
+  nextCursor: string | null
+  counts: { shelf: number; reading: number }
+}
+export interface BookState { book: Book; inShelf: boolean; progress: ProgressSummary | null }
+export interface FeaturedBook extends Book { xiancaoCount: number }
+export interface HomeData {
+  stats: { books: number; authors: number; categories: number; readable: number }
+  featured: FeaturedBook[]
+  highRated: Book[]
+  latest: Book[]
+  reading: CollectionEntry[]
+}
+
 export interface ContentBlock {
   book: Pick<Book, 'id' | 'title' | 'author' | 'chapterCount'>
   chapter: { idx: number; title: string }

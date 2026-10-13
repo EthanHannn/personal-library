@@ -1,4 +1,4 @@
-import { shallowRef, toValue, watch } from 'vue'
+import { onScopeDispose, shallowRef, toValue, watch } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 import { APIError, getJSON } from '../api'
 
@@ -9,9 +9,20 @@ export function useRequest<T>(url: MaybeRefOrGetter<string>) {
   const error = shallowRef<APIError | null>(null)
   const pending = shallowRef(true)
   const attempt = shallowRef(0)
+  let active: AbortController | null = null
+
+  function authLost() {
+    active?.abort()
+    data.value = null
+    pending.value = false
+    error.value = new APIError('登录已过期，请重新登录后继续。', 401)
+  }
+  window.addEventListener('library:auth-lost', authLost)
+  onScopeDispose(() => { active?.abort(); window.removeEventListener('library:auth-lost', authLost) })
 
   watch([() => toValue(url), attempt], async ([path], _previous, onCleanup) => {
     const controller = new AbortController()
+    active = controller
     onCleanup(() => controller.abort())
     data.value = null
     error.value = null

@@ -9,9 +9,10 @@ function logout() { window.dispatchEvent(new Event('library:auth-lost')) }
 <template>
   <header class="site-header">
     <div class="header-inner">
-      <RouterLink class="wordmark" to="/library">知轩书房<span>个人书屋</span></RouterLink>
+      <RouterLink class="wordmark" to="/" aria-label="知轩书房首页">知轩书房<span>个人书屋</span></RouterLink>
       <nav class="nav" aria-label="主导航">
         <RouterLink to="/library">书库</RouterLink>
+        <RouterLink to="/bookshelf">书架</RouterLink>
         <span v-if="data" class="nickname">{{ data.user.nickname }}</span>
         <a v-if="data" :href="data.logoutUrl" @click="logout">退出</a>
       </nav>
@@ -30,6 +31,7 @@ function logout() { window.dispatchEvent(new Event('library:auth-lost')) }
   .header-inner { padding: 18px; gap: 12px; }
   .wordmark { font-size: 22px; }
   .wordmark span, .nickname { display: none; }
-  .nav { gap: 18px; }
+  .nav { gap: 16px; }
 }
+@media (max-width: 360px) { .wordmark { font-size: 20px; }.nav { gap: 12px; font-size: 13px; }.header-inner { gap: 10px; } }
 </style>

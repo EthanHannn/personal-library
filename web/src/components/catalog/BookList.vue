@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Book } from '../../api'
 
-defineProps<{ books: Book[] }>()
+withDefaults(defineProps<{ books: Book[]; headingTag?: 'h2' | 'h3' }>(), { headingTag: 'h2' })
 </script>
 
 <template>
@@ -11,7 +11,7 @@ defineProps<{ books: Book[] }>()
         <div class="book-spine" aria-hidden="true"><span>{{ book.title.slice(0, 8) }}</span></div>
         <div class="book-info">
           <p class="category">{{ book.tag1 }}<span v-if="book.tag2"> · {{ book.tag2 }}</span></p>
-          <h2 class="book-title">{{ book.title }}</h2>
+          <component :is="headingTag" class="book-title">{{ book.title }}</component>
           <p class="author">{{ book.author }}</p>
           <p class="book-meta"><span class="score">{{ book.score.toFixed(1) }} 分</span><span>{{ book.hasContent ? `${book.chapterCount.toLocaleString()} 章` : '暂无正文' }}</span></p>
         </div>
