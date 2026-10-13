@@ -119,6 +119,15 @@ func TestRejectInvalidEncoding(t *testing.T) {
 	}
 }
 
+func TestGB18030AliasesAndReplacementCharacter(t *testing.T) {
+	// WHATWG single-byte euro followed by an intentionally encoded U+FFFD.
+	r, ref := fixture(t, []byte{0x80, 0x84, 0x31, 0xa4, 0x37}, "gb18030")
+	block, err := r.Read(context.Background(), ref, 0, ref.Size, 0, 32)
+	if err != nil || block.Text != "€\ufffd" {
+		t.Fatalf("%q: %v", block.Text, err)
+	}
+}
+
 func TestRejectEscapingPaths(t *testing.T) {
 	r, ref := fixture(t, []byte("safe"), "utf-8")
 	for _, name := range []string{"../other.txt", "..\\other.txt", "/etc/passwd", "C:\\secret.txt", "测试.txt:stream", "sub/../测试.txt", ".", ""} {

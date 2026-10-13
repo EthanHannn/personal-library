@@ -173,9 +173,10 @@ func (a *App) content(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, _ := json.Marshal(struct {
+		Decoder    string
 		File       reader.File
 		Start, End int64
-	}{f, chapter.Start, chapter.End})
+	}{reader.DecoderVersion, f, chapter.Start, chapter.End})
 	hash := sha256.Sum256(data)
 	version := hex.EncodeToString(hash[:])
 	c := cursor{Book: id, Chapter: idx, Version: version}

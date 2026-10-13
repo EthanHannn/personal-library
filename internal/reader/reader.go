@@ -11,12 +11,13 @@ import (
 	"os"
 	"strings"
 	"unicode/utf8"
-
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 )
 
 const MaxBlockBytes = 256 * 1024
+
+// DecoderVersion participates in API content versions whenever decoding rules
+// change, even when the original file's bytes and timestamps remain unchanged.
+const DecoderVersion = "text-v1-legacy-icu78"
 
 var (
 	ErrPath     = errors.New("invalid novel path")
@@ -214,15 +215,25 @@ func decode(raw []byte, encoding string, limit int, first, final bool) (string, 
 			n += width
 			budget += cost
 		}
-		decoded, _, err := transform.Bytes(simplifiedchinese.GB18030.NewDecoder(), src[:n])
+		decoded, err := decodeGB(src[:n], limit)
 		if err != nil || !utf8.Valid(decoded) {
 			return "", 0, ErrEncoding
 		}
-		// The decoder replaces unmapped sequences. Validate round trips only
-		// when U+FFFD occurs; legitimate encoded replacement characters survive.
+		// Reject replacement introduced by decoding an unmapped sequence. A
+		// whole-buffer encode/decode round trip is not a validity test: GB18030
+		// has aliases, including the WHATWG-compatible single-byte euro sign.
 		if bytes.Contains(decoded, []byte("\ufffd")) {
-			encoded, _, err := transform.Bytes(simplifiedchinese.GB18030.NewEncoder(), decoded)
-			if err != nil || !bytes.Equal(encoded, src[:n]) {
+			input, output := 0, 0
+			for input < n {
+				width, _, _ := gbCharacter(src[input:n])
+				ch, size := utf8.DecodeRune(decoded[output:])
+				if ch == utf8.RuneError && !bytes.Equal(src[input:input+width], []byte{0x84, 0x31, 0xa4, 0x37}) {
+					return "", 0, ErrEncoding
+				}
+				input += width
+				output += size
+			}
+			if output != len(decoded) {
 				return "", 0, ErrEncoding
 			}
 		}
@@ -235,6 +246,10 @@ func decode(raw []byte, encoding string, limit int, first, final bool) (string, 
 func gbCharacter(src []byte) (width, maxUTF8 int, err error) {
 	if src[0] <= 0x7f {
 		return 1, 1, nil
+	}
+	// Match the previous TextDecoder('gb18030') WHATWG behavior.
+	if src[0] == 0x80 {
+		return 1, 3, nil
 	}
 	if src[0] < 0x81 || src[0] > 0xfe {
 		return 0, 0, ErrEncoding
