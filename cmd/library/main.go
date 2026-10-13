@@ -28,7 +28,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: library migrate | probe | verify-legacy | healthcheck | metrics")
+		return fmt.Errorf("usage: library migrate | import-legacy | probe | verify-legacy | healthcheck | metrics")
 	}
 	if os.Args[1] == "migrate" {
 		fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
@@ -40,6 +40,9 @@ func run() error {
 			return fmt.Errorf("migrate requires --db")
 		}
 		return storage.Migrate(context.Background(), *db)
+	}
+	if os.Args[1] == "import-legacy" {
+		return importLegacy(os.Args[2:])
 	}
 	if os.Args[1] == "metrics" {
 		metrics, err := probe.ContainerMetrics()

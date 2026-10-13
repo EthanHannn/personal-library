@@ -43,7 +43,11 @@ func Connect(ctx context.Context, filename, mode string, count int) (*sql.DB, er
 	if mode == "ro" {
 		pragmas = append(pragmas, "query_only(1)")
 	}
-	u.RawQuery = url.Values{"mode": {mode}, "_pragma": pragmas, "_txlock": {"immediate"}}.Encode()
+	lock := "immediate"
+	if mode == "ro" {
+		lock = "deferred"
+	}
+	u.RawQuery = url.Values{"mode": {mode}, "_pragma": pragmas, "_txlock": {lock}}.Encode()
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return nil, err

@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-当前实施 M0：先验证范围读取、中文编码和全规模章节查询。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；本项目尚不能替代生产站点。
+M0 后端原型已验证，当前实施 M1：版本化业务库、可恢复迁移和正式服务/前端发布骨架。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；本项目尚不能替代生产站点。
 
 ## 开发
 
@@ -19,6 +19,25 @@ go test ./internal/reader -bench . -benchmem
 GB18030 解码与旧版镜像的 `TextDecoder` 对齐（Node 20.20.2 / ICU 78.2），补齐 Go 解码库缺少的私用区和新版标点映射。测试包含 63,360 组双字节/BMP 四字节序列的独立参考哈希、补充平面字符、分块与随机输入。`tools/m0/encoding-reference.mjs` 可在旧版运行时重新生成参考；更改解码规则时须更新内容版本。
 
 原型返回原始解码正文，尚未实现界面、标题/缩进规范化、个人数据同步或封面任务。安全边界、版本校验和编码错误具有自动化测试。
+
+## 业务库与旧库迁移
+
+先通过 SQLite backup API/CLI 取得**离线一致性快照**；不能只复制运行中的 WAL `.db`。导入命令拒绝带非空 WAL/journal 的输入，原库及 TXT 均保持只读。目标数据库放在本地磁盘，使用独立新路径，不放在 OneDrive 或网络文件系统。
+
+```sh
+go run ./cmd/library migrate --db .local/m1/library.db
+go run ./cmd/library import-legacy --source .local/m0/library.db --db .local/m1/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json --portal-user owner --source-version synthetic-m0-96abf8d
+```
+
+目标目录须先存在。`migrate` 显式创建 schema；它拒绝旧版数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
+
+导入默认每 5,000 行提交一次；`--batch-size` 最大 10,000，`--batch-pause 10ms` 可限速，`--max-batches N` 可主动停在检查点。相同命令继续执行会校验输入指纹后续传；源快照、正文、编码清单、门户用户或来源版本变化时拒绝继续。导入必须离线独占目标库。源数据异常不会静默删行或修正，修正输入后使用另一份新目标库重新演练。
+
+书目、章节、历史读者、书架、进度、投票和评论保留原 ID；默认读者映射到指定门户用户，其他读者保留历史归属，不创建密码或登录入口。章节标题/偏移保持原值，原路径另行保留；同文件允许关联多本书。时间统一为 UTC 毫秒，支持 Prisma 毫秒整数、UTC SQL 时间和带时区 ISO 时间。未识别时间直接失败。
+
+历史评分与票数存入 `rating_snapshots`，已导入个人票同时保存 `imported_type` 基准，后续改票须按差量更新，不能再次累加全部个人票。回复分两步迁移，并检查缺失父评论、跨作品回复和循环关系。
+
+标准输出为 JSON 报告：11 类实体的行数/规范化逐字段 SHA-256、全部源文件 SHA-256、源库全章节校验和目标库 `integrity_check`。检查失败或中断的目标不会被服务接受。清单只提供已确认的编码；此阶段不自动识别编码、不迁移浏览器尚未同步的进度、不复制或验证封面图片。真实全量解码、封面与浏览器状态验收继续按 M4 清单执行。
 
 ## M0 只读原型
 
