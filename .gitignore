@@ -1,0 +1,27 @@
+# Local data, benchmark outputs and credentials
+/.local/
+/data/
+/novels/
+/covers/
+/reports/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build and tooling outputs
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+*.prof
+*.log
+node_modules/
+.DS_Store
+Thumbs.db

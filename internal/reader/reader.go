@@ -1,0 +1,258 @@
+// Package reader reads bounded, character-aligned slices of immutable novel files.
+package reader
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
+)
+
+const MaxBlockBytes = 256 * 1024
+
+var (
+	ErrPath     = errors.New("invalid novel path")
+	ErrRange    = errors.New("invalid chapter range")
+	ErrChanged  = errors.New("source file changed; rebuild its index")
+	ErrEncoding = errors.New("invalid or unsupported text encoding")
+)
+
+// File describes the immutable file version observed by an indexer. ModifiedNS
+// uses nanoseconds since the Unix epoch; it is not a JavaScript numeric timestamp.
+type File struct {
+	Path       string `json:"path"`
+	Encoding   string `json:"encoding"`
+	Size       int64  `json:"size"`
+	ModifiedNS int64  `json:"modifiedNs,string"`
+}
+
+type Block struct {
+	Text  string `json:"text"`
+	Start int64  `json:"start"`
+	End   int64  `json:"end"`
+	Next  *int64 `json:"next"`
+}
+
+type Reader struct {
+	root  *os.Root
+	slots chan struct{}
+}
+
+func Open(root string, concurrency int) (*Reader, error) {
+	if concurrency < 1 || concurrency > 16 {
+		return nil, fmt.Errorf("reader concurrency must be between 1 and 16")
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Reader{root: r, slots: make(chan struct{}, concurrency)}, nil
+}
+
+func (r *Reader) Close() error { return r.root.Close() }
+
+func cleanPath(name string) (string, error) {
+	name = strings.ReplaceAll(name, "\\", "/")
+	if name == "." || !fs.ValidPath(name) || strings.ContainsAny(name, ":\x00") {
+		return "", ErrPath
+	}
+	return name, nil
+}
+
+// Inspect captures metadata only. Encoding must be chosen during import, after
+// inspecting the entire source or by an explicit user decision.
+func (r *Reader) Inspect(name, encoding string) (File, error) {
+	if encoding != "utf-8" && encoding != "gb18030" {
+		return File{}, ErrEncoding
+	}
+	name, err := cleanPath(name)
+	if err != nil {
+		return File{}, err
+	}
+	f, err := r.root.Open(name)
+	if err != nil {
+		return File{}, fmt.Errorf("%w: %w", ErrPath, err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return File{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return File{}, ErrPath
+	}
+	return File{Path: name, Encoding: encoding, Size: info.Size(), ModifiedNS: info.ModTime().UnixNano()}, nil
+}
+
+// Read returns at most limit bytes of decoded UTF-8 without splitting a rune.
+// offset must be the chapter start or a Next value returned for this file and
+// chapter. API callers must authenticate cursors rather than accept arbitrary
+// offsets: the middle of a GB18030 character can also look like a valid start.
+// The file must stay immutable for the lifetime of its index. Size/mtime checks
+// catch ordinary replacements; import verification must additionally hash files.
+func (r *Reader) Read(ctx context.Context, ref File, start, end, offset int64, limit int) (Block, error) {
+	if start < 0 || start >= end || end > ref.Size || offset < start || offset >= end || limit < 4 || limit > MaxBlockBytes {
+		return Block{}, ErrRange
+	}
+	if err := ctx.Err(); err != nil {
+		return Block{}, err
+	}
+	select {
+	case r.slots <- struct{}{}:
+		defer func() { <-r.slots }()
+	case <-ctx.Done():
+		return Block{}, ctx.Err()
+	}
+	name, err := cleanPath(ref.Path)
+	if err != nil {
+		return Block{}, err
+	}
+	f, err := r.root.Open(name)
+	if err != nil {
+		return Block{}, fmt.Errorf("%w: %w", ErrPath, err)
+	}
+	defer f.Close()
+	before, err := f.Stat()
+	if err != nil {
+		return Block{}, err
+	}
+	if !before.Mode().IsRegular() {
+		return Block{}, ErrPath
+	}
+	if !matches(before, ref) {
+		return Block{}, ErrChanged
+	}
+
+	// Four lookahead bytes cover UTF-8 and GB18030 code points and an initial BOM.
+	want := min(int64(limit+4), end-offset)
+	raw := make([]byte, int(want))
+	n, err := f.ReadAt(raw, offset)
+	if err != nil && err != io.EOF {
+		return Block{}, err
+	}
+	if int64(n) != want {
+		return Block{}, ErrChanged
+	}
+	text, used, err := decode(raw, ref.Encoding, limit, offset == 0, offset+want == end)
+	if err != nil {
+		return Block{}, err
+	}
+	after, err := f.Stat()
+	if err != nil {
+		return Block{}, err
+	}
+	if !matches(after, ref) {
+		return Block{}, ErrChanged
+	}
+	if err := ctx.Err(); err != nil {
+		return Block{}, err
+	}
+	if used == 0 {
+		return Block{}, ErrEncoding
+	}
+	block := Block{Text: text, Start: offset, End: offset + int64(used)}
+	if block.End < end {
+		next := block.End
+		block.Next = &next
+	}
+	return block, nil
+}
+
+func matches(info fs.FileInfo, ref File) bool {
+	return info.Size() == ref.Size && info.ModTime().UnixNano() == ref.ModifiedNS
+}
+
+func decode(raw []byte, encoding string, limit int, first, final bool) (string, int, error) {
+	skip := 0
+	if encoding == "utf-8" && first && bytes.HasPrefix(raw, []byte{0xef, 0xbb, 0xbf}) {
+		skip = 3
+	}
+	src := raw[skip:]
+	switch encoding {
+	case "utf-8":
+		n := 0
+		for n < len(src) && n < limit {
+			if !utf8.FullRune(src[n:]) {
+				if final {
+					return "", 0, ErrEncoding
+				}
+				break
+			}
+			ch, size := utf8.DecodeRune(src[n:])
+			if ch == utf8.RuneError && size == 1 {
+				return "", 0, ErrEncoding
+			}
+			if n+size > limit {
+				break
+			}
+			n += size
+		}
+		return string(src[:n]), n + skip, nil
+	case "gb18030":
+		// Validate only the prefix we may emit. Budget conservatively by the
+		// maximum UTF-8 size of each source character (3 for pairs, 4 for quads).
+		n, budget := 0, 0
+		for n < len(src) && budget < limit {
+			width, cost, err := gbCharacter(src[n:])
+			if err == io.ErrUnexpectedEOF && !final {
+				break
+			}
+			if err != nil {
+				return "", 0, ErrEncoding
+			}
+			if budget+cost > limit {
+				break
+			}
+			n += width
+			budget += cost
+		}
+		decoded, _, err := transform.Bytes(simplifiedchinese.GB18030.NewDecoder(), src[:n])
+		if err != nil || !utf8.Valid(decoded) {
+			return "", 0, ErrEncoding
+		}
+		// The decoder replaces unmapped sequences. Validate round trips only
+		// when U+FFFD occurs; legitimate encoded replacement characters survive.
+		if bytes.Contains(decoded, []byte("\ufffd")) {
+			encoded, _, err := transform.Bytes(simplifiedchinese.GB18030.NewEncoder(), decoded)
+			if err != nil || !bytes.Equal(encoded, src[:n]) {
+				return "", 0, ErrEncoding
+			}
+		}
+		return string(decoded), n, nil
+	default:
+		return "", 0, ErrEncoding
+	}
+}
+
+func gbCharacter(src []byte) (width, maxUTF8 int, err error) {
+	if src[0] <= 0x7f {
+		return 1, 1, nil
+	}
+	if src[0] < 0x81 || src[0] > 0xfe {
+		return 0, 0, ErrEncoding
+	}
+	if len(src) < 2 {
+		return 0, 0, io.ErrUnexpectedEOF
+	}
+	if src[1] >= 0x40 && src[1] <= 0xfe && src[1] != 0x7f {
+		return 2, 3, nil
+	}
+	if src[1] < 0x30 || src[1] > 0x39 {
+		return 0, 0, ErrEncoding
+	}
+	if len(src) < 4 {
+		return 0, 0, io.ErrUnexpectedEOF
+	}
+	if src[2] < 0x81 || src[2] > 0xfe || src[3] < 0x30 || src[3] > 0x39 {
+		return 0, 0, ErrEncoding
+	}
+	return 4, 4, nil
+}
