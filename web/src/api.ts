@@ -16,6 +16,14 @@ export interface Identity {
   logoutUrl: string
 }
 
+export interface CatalogBook extends Book { popularity: number; xiancaoCount: number }
+export interface CatalogPage {
+  books: CatalogBook[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  summary: { authors: number; readable: number }
+}
+export interface Category { name: string; count: number; subcategories: { name: string; count: number }[] }
+
 export interface ProgressSummary { chapterIdx: number; percent: number; updatedAt: number }
 export interface CollectionEntry {
   book: Book

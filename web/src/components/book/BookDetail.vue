@@ -21,9 +21,9 @@ function changed(inShelf: boolean) {
 <template>
   <RequestStatus :pending="pending" :error="error" @retry="reload" />
   <article v-if="data" class="book-detail">
-    <p class="eyebrow">{{ data.book.tag1 }} · {{ data.book.tag2 }}</p>
+    <p class="eyebrow"><RouterLink v-if="data.book.tag1" :to="`/category/${encodeURIComponent(data.book.tag1)}`">{{ data.book.tag1 }}</RouterLink><span v-if="data.book.tag2"> · <RouterLink :to="`/category/${encodeURIComponent(data.book.tag2)}`">{{ data.book.tag2 }}</RouterLink></span></p>
     <h1>{{ data.book.title }}</h1>
-    <p class="muted">{{ data.book.author }} · {{ data.book.wordCount.toLocaleString() }} 字 · {{ data.book.score.toFixed(1) }} 分</p>
+    <p class="muted"><RouterLink v-if="data.book.author" :to="`/author/${encodeURIComponent(data.book.author)}`">{{ data.book.author }}</RouterLink> · {{ data.book.wordCount.toLocaleString() }} 字 · {{ data.book.score.toFixed(1) }} 分</p>
     <p class="intro">{{ data.book.intro || '这本书还没有简介。' }}</p>
     <ReadingPosition v-if="data.progress" :progress="data.progress" :chapter-count="data.book.chapterCount" />
     <div class="book-actions"><RouterLink v-if="data.book.hasContent" class="button" :to="`/read/${data.book.id}`">{{ data.progress ? '继续阅读' : '开始阅读' }}</RouterLink><p v-else class="muted">暂未收录正文。</p><ShelfButton :key="data.book.id" :book-id="data.book.id" :in-shelf="data.inShelf" @change="changed" /><RouterLink class="shelf-link" to="/bookshelf">我的书架 →</RouterLink></div>
