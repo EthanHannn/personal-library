@@ -10,7 +10,7 @@ function label(position: Position | null) { return position ? `第 ${position.ch
     <template v-if="expired"><p>{{ storageUnavailable ? '登录已失效，浏览器未能暂存这次阅读位置。' : '登录已失效，阅读位置已留在本机。' }}</p><a class="reader-button" :href="`/read/${bookId}`">重新登录并恢复</a></template>
     <template v-else-if="taken"><p>另一标签页正在阅读此书，本页已暂停保存。</p><a class="reader-button" :href="`/read/${bookId}`">在本页继续</a></template>
     <template v-else-if="conflict"><p>发现另一处阅读位置，请选择从哪里继续。</p><div class="reader-row conflict-actions"><button class="reader-button" @click="emit('choose', 'local')">本机：{{ label(conflict.local) }}</button><button class="reader-button" @click="emit('choose', 'remote')">服务端：{{ label(conflict.remote) }}</button></div></template>
-    <template v-else-if="recovery"><p>正文或章节已变化，原位置仍保留。可打开目录选择章节，或从本章开头重新阅读。</p><button class="reader-button" @click="emit('restart')">从本章开头阅读</button></template>
+    <template v-else-if="recovery"><p>{{ error || '正文或章节已变化，暂时无法恢复原位置。' }} 原位置仍保留。</p><div class="reader-row conflict-actions"><button class="reader-button" @click="emit('retry')">重试恢复</button><button class="reader-button" @click="emit('restart')">从本章开头阅读</button></div></template>
     <template v-else><p>{{ error }}</p><button class="reader-button" @click="emit('retry')">重新加载</button></template>
   </aside>
 </template>

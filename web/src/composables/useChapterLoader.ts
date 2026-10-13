@@ -1,5 +1,5 @@
 import { onScopeDispose, shallowRef } from 'vue'
-import { getJSON } from '../api'
+import { APIError, getJSON } from '../api'
 import type { ContentBlock, Position, ReadingState } from '../api'
 
 const CACHE_BYTES = 2 * 1024 * 1024
@@ -34,6 +34,7 @@ export function useChapterLoader(bookId: number) {
 
   function prefetch() {
     pausePrefetch()
+    if (disposed) return
     const next = state.value?.next?.idx
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
     if (!next || cache.has(next) || document.hidden || connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType ?? '')) return
@@ -48,6 +49,7 @@ export function useChapterLoader(bookId: number) {
   }
 
   async function load(chapter?: number, position?: Position | null, initial = false): Promise<ReadingState | null> {
+    if (disposed) return null
     const ownGeneration = ++generation
     controller?.abort(); pausePrefetch()
     const ownController = new AbortController(); controller = ownController
@@ -72,12 +74,13 @@ export function useChapterLoader(bookId: number) {
       remember(state.value)
       return state.value
     } catch (cause) {
-      if (ownGeneration === generation && !ownController.signal.aborted) error.value = cause instanceof Error ? cause.message : '章节加载失败，请重试'
+      if (ownGeneration === generation && !ownController.signal.aborted) error.value = cause instanceof APIError ? cause.message : '网络暂时不可用，请检查连接后重试'
       return null
     } finally { if (ownGeneration === generation) loading.value = false }
   }
 
   async function append(): Promise<boolean> {
+    if (disposed) return false
     const last = blocks.value.at(-1)
     if (!last?.nextCursor || loading.value) return false
     // Replacing an oversized window requires a deliberate button action. Never
@@ -95,7 +98,7 @@ export function useChapterLoader(bookId: number) {
       if (state.value) remember(state.value)
       return replace
     } catch (cause) {
-      if (!ownController.signal.aborted) error.value = cause instanceof Error ? cause.message : '正文加载失败'
+      if (!ownController.signal.aborted) error.value = cause instanceof APIError ? cause.message : '网络暂时不可用，请检查连接后重试'
       return false
     } finally { if (ownGeneration === generation) loading.value = false }
   }

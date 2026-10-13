@@ -22,7 +22,7 @@ it('keeps the current chapter on navigation errors and clears text on authentica
   const fetch = vi.fn().mockResolvedValueOnce(response(reading(1))).mockRejectedValueOnce(new TypeError('offline')); vi.stubGlobal('fetch', fetch)
   const loader = setup(); await loader.load(1); await loader.load(2)
   expect(loader.blocks.value[0].chapter.idx).toBe(1)
-  expect(loader.error.value).toContain('offline')
+  expect(loader.error.value).toContain('检查连接')
   window.dispatchEvent(new Event('library:auth-lost'))
   expect(loader.blocks.value).toEqual([]); expect(loader.state.value).toBeNull()
 })

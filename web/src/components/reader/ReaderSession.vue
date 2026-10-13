@@ -47,6 +47,7 @@ const chapter = computed(() => loader.state.value?.content?.chapter.idx ?? (Numb
 const panelTitle = computed(() => ({ directory: '章节目录', settings: '阅读设置', tts: '语音朗读' })[panel.value ?? 'directory'])
 let generation = 0
 let startup: Promise<Position | null> | null = null
+let resumeOnce: { chapter: number; position: Position | null } | null = null
 let started = false
 let disposed = false
 
@@ -56,15 +57,20 @@ function snapshot() {
 }
 
 async function restore(position: Position | null) {
+  const ownGeneration = generation
   await nextTick()
+  if (disposed || ownGeneration !== generation) return false
   const ok = await viewport.value?.restore(position)
-  if (ok === false) { recovery.value = true; progress.ready.value = false; return }
+  if (disposed || ownGeneration !== generation) return false
+  if (ok === false) { recovery.value = true; progress.ready.value = false; return false }
   progress.restored(viewport.value?.capture() ?? null)
   if (!blocked.value) loader.prefetch()
+  return true
 }
 
 async function open() {
   const ownGeneration = ++generation
+  const requestedRestore = resumeOnce
   snapshot(); progress.ready.value = false; tts.stop(); panel.value = null
   void progress.persist(); void progress.flush()
   const raw = route.query.c
@@ -78,15 +84,17 @@ async function open() {
   if (!startup) startup = progress.start(state.progress)
   const saved = await startup
   if (ownGeneration !== generation || disposed) return
-  started = true
   recovery.value = state.recoveryRequired
-  const target = first && (!explicit || saved?.chapterIdx === selected) ? saved : null
+  const target = requestedRestore && requestedRestore.chapter === selected ? requestedRestore.position : first && (!explicit || saved?.chapterIdx === selected) ? saved : null
   if (recovery.value && !explicit) return
   if (target && (target.chapterIdx !== state.content?.chapter.idx || (target.anchor && target.anchor.block !== state.content?.blockToken) || (!target.anchor && target.percent > 0 && state.content?.nextCursor))) {
     state = await loader.load(target.chapterIdx, target)
     if (!state || ownGeneration !== generation || disposed) { if (ownGeneration === generation) recovery.value = true; return }
   }
-  if (ownGeneration === generation) await restore(target)
+  if (ownGeneration === generation && await restore(target)) {
+    started = true
+    if (resumeOnce === requestedRestore) resumeOnce = null
+  }
 }
 
 async function navigate(index: number) {
@@ -94,7 +102,8 @@ async function navigate(index: number) {
   if (recovery.value) {
     const state = await loader.load(index)
     if (!state) return
-    await progress.restartConfirmed(); recovery.value = false
+    await progress.restartConfirmed(); recovery.value = false; started = true
+    resumeOnce = { chapter: index, position: null }
   }
   panel.value = null
   if (String(index) === route.query.c) void open()
@@ -102,17 +111,21 @@ async function navigate(index: number) {
 }
 
 async function choose(which: 'local' | 'remote') {
+  const ownGeneration = ++generation
   tts.stop(); progress.ready.value = false
   const position = await progress.choose(which)
-  const state = await loader.load(position?.chapterIdx ?? 1, position)
-  if (state) { recovery.value = false; await restore(position) }
-  else recovery.value = true
+  if (ownGeneration !== generation || disposed || progress.conflict.value) return
+  const chapter = position?.chapterIdx ?? 1
+  resumeOnce = { chapter, position }
+  recovery.value = false
+  if (String(chapter) === route.query.c) await open()
+  else await router.replace({ path: `/read/${props.bookId}`, query: { c: String(chapter) } })
 }
 
 async function restart() {
   const index = loader.state.value?.content?.chapter.idx ?? 1
   const state = await loader.load(index)
-  if (state) { await progress.restartConfirmed(); recovery.value = false; await restore(null) }
+  if (state) { await progress.restartConfirmed(); recovery.value = false; if (await restore(null)) started = true }
 }
 
 async function more(fromSpeech = false) {
