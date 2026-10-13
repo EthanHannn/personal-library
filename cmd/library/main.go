@@ -64,7 +64,7 @@ func run() error {
 		}
 		return nil
 	}
-	if os.Args[1] != "probe" {
+	if os.Args[1] != "probe" && os.Args[1] != "verify-legacy" {
 		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
@@ -78,10 +78,6 @@ func run() error {
 	}
 	if *db == "" || *novels == "" || *manifestPath == "" || fs.NArg() > 0 {
 		return fmt.Errorf("probe requires --db, --novels and --manifest")
-	}
-	config, err := gateway.Parse(os.Getenv("PORTAL_ALLOWED_USER"), os.Getenv("LIBRARY_PUBLIC_URL"), os.Getenv("PORTAL_AUTH_URL"))
-	if err != nil {
-		return err
 	}
 	manifest, err := probe.LoadManifest(*manifestPath)
 	if err != nil {
@@ -99,6 +95,20 @@ func run() error {
 		return err
 	}
 	defer r.Close()
+	if os.Args[1] == "verify-legacy" {
+		report, err := probe.Verify(ctx, store, r, manifest)
+		if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
+			return encodeErr
+		}
+		if err != nil {
+			return err
+		}
+		return report.Error()
+	}
+	config, err := gateway.Parse(os.Getenv("PORTAL_ALLOWED_USER"), os.Getenv("LIBRARY_PUBLIC_URL"), os.Getenv("PORTAL_AUTH_URL"))
+	if err != nil {
+		return err
+	}
 	app, err := probe.New(store, r, manifest)
 	if err != nil {
 		return err

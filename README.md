@@ -26,6 +26,7 @@ GB18030 解码与旧版镜像的 `TextDecoder` 对齐（Node 20.20.2 / ICU 78.2�
 
 ```sh
 python tools/m0/fixture.py --output .local/m0
+go run ./cmd/library verify-legacy --db .local/m0/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json
 go run ./cmd/library probe --db .local/m0/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json
 ```
 
@@ -47,6 +48,8 @@ PORTAL_AUTH_URL=https://auth.example.test
 | `/api/v1/books/1/chapters/1/content` | 首个正文块；用返回的 `nextCursor` 继续读取 |
 
 所有响应为 `private, no-store`。续读游标绑定作品、章节与文件版本，并由服务签名；服务重启后需要重新打开章节。数据库使用只读连接、每连接 8 MiB 页缓存，正文读取并发上限为 4。文件大小和修改时间检查不等同于完整指纹校验，原型要求输入快照及正文保持不变。
+
+`verify-legacy` 是本地只读校验命令，无需门户环境变量。它运行 SQLite `quick_check`，按索引顺序扫描全部章节，检查编号、数量、孤儿、重叠、文件版本及字节边界；错误示例最多保存 100 条，总数不截断。它不会自动修复源数据，也不代替迁移阶段的完整指纹、正文解码及个人数据关联验收。
 
 ### Linux 容器测量
 
