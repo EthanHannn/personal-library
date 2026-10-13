@@ -11,10 +11,12 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/EthanHannn/personal-library/internal/catalog"
 	"github.com/EthanHannn/personal-library/internal/gateway"
 	"github.com/EthanHannn/personal-library/internal/reader"
+	"github.com/EthanHannn/personal-library/internal/storage"
 )
 
 func mutate(h http.Handler, m catalog.ProgressMutation) *httptest.ResponseRecorder {
@@ -215,5 +217,44 @@ func TestReceiptRetentionKeepsDeviceOrder(t *testing.T) {
 	m.BaseRevision = 130
 	if w := mutate(h, m); w.Code != 409 {
 		t.Fatal("expired receipt overrode newer progress", w.Code)
+	}
+}
+
+func TestSQLiteBusyRetainsProgressAndCanRetry(t *testing.T) {
+	h, db := serviceFixture(t)
+	s := initial(t, h, "/api/v1/books/42/reader")
+	var path string
+	if err := db.Read.QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&path); err != nil {
+		t.Fatal(err)
+	}
+	other, err := storage.Connect(context.Background(), path, "rw", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	lock, err := other.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Rollback()
+	m := catalog.ProgressMutation{Position: catalog.Position{ChapterIdx: 1, Percent: 0.5, ContentVersion: s.Content.ContentVersion, Anchor: &catalog.Anchor{Block: s.Content.BlockToken, Paragraph: 4}}, DeviceID: "busy-device", MutationID: "busy-mutation", ClientSeq: 1}
+	started := time.Now()
+	if w := mutate(h, m); w.Code != 503 {
+		t.Fatal("busy write", w.Code, w.Body.String())
+	}
+	if time.Since(started) > 4*time.Second {
+		t.Fatal("busy write exceeded bounded wait")
+	}
+	if state := initial(t, h, "/api/v1/books/42/reader"); state.Progress != nil {
+		t.Fatal("failed save changed progress")
+	}
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if w := mutate(h, m); w.Code != 200 {
+		t.Fatal("retry did not succeed", w.Code, w.Body.String())
+	}
+	if state := initial(t, h, "/api/v1/books/42/reader"); state.Progress.Revision != 1 {
+		t.Fatal("failed attempt consumed revision")
 	}
 }

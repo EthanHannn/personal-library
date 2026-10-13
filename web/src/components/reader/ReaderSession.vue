@@ -130,8 +130,8 @@ async function settings(value: Preferences) {
 
 function keyboard(event: KeyboardEvent) {
   if (panel.value || blocked.value || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-  const target = event.target as HTMLElement
-  if (target.closest('input, textarea, select, [contenteditable=true]')) return
+  const target = event.target
+  if (target instanceof Element && target.closest('input, textarea, select, [contenteditable=true]')) return
   const next = event.key === 'ArrowRight' ? loader.state.value?.next : event.key === 'ArrowLeft' ? loader.state.value?.previous : null
   if (next) { event.preventDefault(); navigate(next.idx) }
 }
@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="reader-session" :style="prefs.style.value">
     <ReaderToolbar :book="loader.state.value?.book ?? null" :book-id="bookId" :chapter="chapter" :previous="loader.state.value?.previous?.idx ?? null" :next="loader.state.value?.next?.idx ?? null" :in-shelf="loader.state.value?.inShelf ?? false" :loading="loader.loading.value" :blocked="blocked" :message="progress.message.value" :speaking="tts.status.value === 'playing'" @navigate="navigate" @panel="panel = $event" @retry="progress.flush()" />
-    <ReaderNotice :book-id="bookId" :expired="progress.expired.value" :taken="progress.taken.value" :conflict="progress.conflict.value" :recovery="recovery" :error="loader.error.value" @choose="choose" @restart="restart" @retry="open" />
+    <ReaderNotice :book-id="bookId" :expired="progress.expired.value" :taken="progress.taken.value" :storage-unavailable="progress.storageError.value" :conflict="progress.conflict.value" :recovery="recovery" :error="loader.error.value" @choose="choose" @restart="restart" @retry="open" />
     <ReaderViewport v-if="loader.blocks.value.length" ref="viewport" :paragraphs="paragraphs" :title="loader.state.value?.content?.chapter.title ?? ''" :font-size="prefs.preferences.value.fontSize" :colorize="prefs.preferences.value.colorize" :highlight="tts.status.value === 'idle' ? -1 : tts.currentIndex.value" :has-more="!!loader.blocks.value.at(-1)?.nextCursor" :loading="loader.loading.value" @position="progress.capture" @visible="visibleIndex = $event" @more="more" />
     <div v-else class="reader-empty" role="status">{{ loader.loading.value ? '正在翻开书页…' : '请选择章节或恢复阅读位置' }}</div>
     <ReaderDialog v-if="panel" :title="panelTitle" @close="panel = null">

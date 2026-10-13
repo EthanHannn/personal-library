@@ -62,8 +62,9 @@ export function useReaderTts(paragraphs: ShallowRef<Paragraph[]>, preferences: S
       }
     }
     next.onerror = event => {
-      if (token !== generation || ['canceled', 'interrupted'].includes(event.error)) return
-      status.value = 'idle'; error.value = '朗读未能继续，请检查设备音色后重试'
+      if (token !== generation) return
+      stop()
+      if (!['canceled', 'interrupted'].includes(event.error)) error.value = '朗读未能继续，请检查设备音色后重试'
     }
     speechSynthesis.speak(next)
   }

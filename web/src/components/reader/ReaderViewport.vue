@@ -138,7 +138,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 .chapter-kicker { color: var(--reader-muted); font: 12px var(--sans); letter-spacing: .2em; }
 .reader-chapter-title { color: var(--reader-title); font-size: 1.5em; }
 .reader-paragraph { margin: 0 0 1em; white-space: pre-wrap; overflow-wrap: anywhere; scroll-margin-top: 24px; }
-.reader-paragraph.speaking { background: var(--reader-soft); outline: 2px solid var(--reader-border); border-radius: 3px; }
+.reader-paragraph.speaking, .reader-chapter-title.speaking { background: var(--reader-soft); outline: 2px solid var(--reader-border); border-radius: 3px; }
 .reader-paper ::selection { color: var(--reader-paper); background: var(--reader-accent); }
 .reader-block-end { text-align: center; margin-top: 40px; font: 14px var(--sans); }
 .colorized .token-quote { color: var(--reader-quote); }.colorized .token-bracket { color: var(--reader-bracket); }.colorized .token-punctuation { color: var(--reader-punctuation); }.colorized .token-marker { color: var(--reader-marker); }.colorized .token-number { color: var(--reader-number); }.colorized .token-english { color: var(--reader-english); }

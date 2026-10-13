@@ -69,7 +69,9 @@ go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
 `deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及三个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
 
-CI 在 Windows/Linux 上构建前端及运行 Go 测试；Linux 另检查 race、sqlc 生成一致性、导入合成小库并运行真实发布容器的 27 项冒烟检查。可在已运行的合成环境中复用：`node tools/m1/smoke.mjs --base http://127.0.0.1:16871`。
+CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的 27 项基础检查、18 项进度检查和重启后的 3 项恢复检查。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`，以及 `node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json`，重启后加 `--resume .local/progress-smoke.json` 验证持久进度与回执。
+
+本地浏览器测试可启动 `node tools/m2/browser-gateway.mjs`，访问 `http://127.0.0.1:16872`。该回环测试网关使用合成会话和可控 503/401，只用于故障回归，不是 Authelia，也不用于生产部署。`tools/m2/measure-progress.mjs` 可与 M0 读取测量脚本同时运行，记录同步写入延迟。
 
 ## 业务库与旧库迁移
 

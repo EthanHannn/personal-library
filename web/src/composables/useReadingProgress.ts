@@ -140,7 +140,7 @@ export function useReadingProgress(bookId: number) {
   function authLost() {
     void persist()
     expired.value = true; ready.value = false
-    message.value = '登录已失效 · 本机位置保留，重新登录后恢复'
+    message.value = storageError.value ? '登录已失效 · 本机存储不可用，进度尚未保存' : '登录已失效 · 本机位置保留，重新登录后恢复'
   }
   window.addEventListener('library:auth-lost', authLost)
   if (channel) channel.onmessage = ({ data }) => {
@@ -155,5 +155,5 @@ export function useReadingProgress(bookId: number) {
     clearInterval(localTimer); clearInterval(serverTimer)
     window.removeEventListener('library:auth-lost', authLost); channel?.close()
   })
-  return { server, local, conflict, ready, expired, taken, message, syncing, writable, start, capture, restored, persist, flush, choose, restartConfirmed, revalidate }
+  return { server, local, conflict, ready, expired, taken, message, syncing, storageError, writable, start, capture, restored, persist, flush, choose, restartConfirmed, revalidate }
 }

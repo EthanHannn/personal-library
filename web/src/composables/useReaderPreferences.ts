@@ -15,7 +15,7 @@ export function loadPreferences(): Preferences {
       rate: Number(localStorage.getItem('zx_reader_tts_rate')),
       voice: localStorage.getItem('zx_reader_tts_voice') ?? '',
     })
-    localStorage.setItem(key, JSON.stringify(migrated))
+    try { localStorage.setItem(key, JSON.stringify(migrated)) } catch { /* Apply readable legacy values for this session even if storage is full. */ }
     return migrated
   } catch { return { ...defaultPreferences } }
 }

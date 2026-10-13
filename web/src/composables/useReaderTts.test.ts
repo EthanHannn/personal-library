@@ -22,6 +22,8 @@ it('ignores stale speech callbacks, pauses/resumes, highlights paragraphs and re
   const second = engine.speak.mock.calls[1][0] as Utterance
   first.onend?.(); expect(engine.speak).toHaveBeenCalledTimes(2)
   second.onstart?.(); expect(follow).toHaveBeenLastCalledWith(1)
+  second.onerror?.({ error: 'audio-busy' })
+  expect(tts.status.value).toBe('idle'); expect(tts.error.value).toContain('检查设备音色')
   window.dispatchEvent(new Event('library:auth-lost'))
   expect(tts.status.value).toBe('idle')
   second.onend?.(); expect(engine.speak).toHaveBeenCalledTimes(2)
