@@ -58,6 +58,8 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 
 旧版测量将 `--target` 改为 `legacy`，指定其回环端口和容器名，并把同一静态二进制只读挂载到 `/bench/library`，加 `--collector /bench/library`。每份报告使用新文件名。采样包含 PID 1 RSS、cgroup v2 的 current/anon/file、p50/p95、响应大小和错误；只覆盖回环 API，不代表浏览器首次可读或门户认证性能。旧目录全量响应与新版窗口响应的大小会分别记录。
 
+后台重任务预算使用合成图片验证：`go run ./cmd/library fixture-cover --output .local/m0/cover.jpg` 创建 4096×4096 JPEG；为原型启动命令添加 `--image-workload /fixture/cover.jpg` 后，每 10 秒串行解码一次并编码三个缩略尺寸。仅用于 M0 资源测试，不抓取网络图片、不发布封面、不修改数据库，也不代表持久任务已经实现。以 256 MiB 容器上限运行 30 分钟测量，可检查持续读取与单个图片任务并行的峰值。
+
 ## 数据与项目文档
 
 本地测试数据与输出放入 `.local/`。真实正文、封面、数据库、个人业务数据及凭据不提交 Git。工程设计、实施验收和进度记录继续维护在 Obsidian 的 `HomeProjects/06projects/个人小说书屋`。

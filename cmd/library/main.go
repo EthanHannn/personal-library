@@ -36,6 +36,17 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(metrics)
 	}
+	if os.Args[1] == "fixture-cover" {
+		fs := flag.NewFlagSet("fixture-cover", flag.ContinueOnError)
+		output := fs.String("output", "", "new synthetic JPEG file")
+		if err := fs.Parse(os.Args[2:]); err != nil {
+			return err
+		}
+		if *output == "" || fs.NArg() != 0 {
+			return fmt.Errorf("fixture-cover requires --output")
+		}
+		return probe.CreateCoverFixture(*output)
+	}
 	if os.Args[1] == "healthcheck" {
 		fs := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
 		url := fs.String("url", "http://127.0.0.1:8080/api/health", "internal health endpoint")
@@ -61,6 +72,7 @@ func run() error {
 	novels := fs.String("novels", "", "read-only novel root")
 	manifestPath := fs.String("manifest", "", "verified encoding / file-version manifest")
 	listen := fs.String("listen", "127.0.0.1:8080", "HTTP listen address; only a trusted gateway may access it")
+	imageWorkload := fs.String("image-workload", "", "M0 only: synthetic image decoded every 10s to test background memory")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		return err
 	}
@@ -96,6 +108,12 @@ func run() error {
 		return err
 	}
 	slog.Info("read-only probe ready", "listen", *listen, "queryPlan", plan)
+	if *imageWorkload != "" {
+		if err := probe.DecodeCoverSample(ctx, *imageWorkload); err != nil {
+			return err
+		}
+		go probe.ImageWorkload(ctx, *imageWorkload, 10*time.Second)
+	}
 	server := &http.Server{Addr: *listen, Handler: app.Handler(config), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
