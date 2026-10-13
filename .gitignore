@@ -23,5 +23,7 @@
 *.prof
 *.log
 node_modules/
+__pycache__/
+*.pyc
 .DS_Store
 Thumbs.db

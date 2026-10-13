@@ -1,0 +1,5 @@
+**
+!bin/
+!bin/library-linux-amd64
+!deploy/
+!deploy/Dockerfile.probe

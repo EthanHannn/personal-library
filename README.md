@@ -18,6 +18,46 @@ go test ./internal/reader -bench . -benchmem
 
 原型返回原始解码正文，尚未实现界面、标题/缩进规范化、个人数据同步或封面任务。安全边界、版本校验和编码错误具有自动化测试。
 
+## M0 只读原型
+
+使用 Python 3 的标准库生成 6,761 部书目、5,844,097 条章节索引、256 MiB 大 TXT 及编码/超长行样本（约需 700 MiB 磁盘）。输出目录必须不存在或为空。
+
+```sh
+python tools/m0/fixture.py --output .local/m0
+go run ./cmd/library probe --db .local/m0/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json
+```
+
+启动前设置以下测试环境变量；缺少配置时服务拒绝启动：
+
+```text
+PORTAL_ALLOWED_USER=owner
+LIBRARY_PUBLIC_URL=https://library.example.test
+PORTAL_AUTH_URL=https://auth.example.test
+```
+
+服务默认只监听 `127.0.0.1:8080`。测试请求提供 `Remote-User: owner`；这是受控本地测试身份，生产中必须由 nginx 在 Authelia 认证后覆盖注入，后端端口只能供可信网关访问。
+
+| 路径 | 行为 |
+| --- | --- |
+| `/api/health` | 容器内部探活；公网仍应经 nginx 认证 |
+| `/api/v1/me` | 默认读者与统一退出地址 |
+| `/api/v1/books/1/chapters?after=0&limit=100` | 按章节号定位，最多 200 条 |
+| `/api/v1/books/1/chapters/1/content` | 首个正文块；用返回的 `nextCursor` 继续读取 |
+
+所有响应为 `private, no-store`。续读游标绑定作品、章节与文件版本，并由服务签名；服务重启后需要重新打开章节。数据库使用只读连接、每连接 8 MiB 页缓存，正文读取并发上限为 4。文件大小和修改时间检查不等同于完整指纹校验，原型要求输入快照及正文保持不变。
+
+### Linux 容器测量
+
+交叉编译 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o bin/library-linux-amd64 ./cmd/library`，再用 `docker build -f deploy/Dockerfile.probe -t personal-library:m0 .` 构建无 root 权限的原型镜像。Windows PowerShell 需以 `$env:GOOS='linux'` 等方式设置进程环境变量。
+
+容器只映射回环端口，将 `.local/m0` 只读挂载至 `/fixture` 并传入上述测试环境变量。先以相同的 1 核 / 768 MiB 配额顺序比较旧、新服务，再单独验证新版 256 MiB 的目标上限。旧版镜像应核对为 `ec14e64`，使用同一合成数据库/正文和测试身份，并关闭封面自动抓取。旧版可直接用 `node server.js` 启动，绕开仅用于正常部署的初始化写入；合成库已经含默认读者。
+
+```sh
+node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container personal-library-m0 --fixture .local/m0/fixture-summary.json --out .local/reports/go.json --seconds 1800
+```
+
+旧版测量将 `--target` 改为 `legacy`，指定其回环端口和容器名，并把同一静态二进制只读挂载到 `/bench/library`，加 `--collector /bench/library`。每份报告使用新文件名。采样包含 PID 1 RSS、cgroup v2 的 current/anon/file、p50/p95、响应大小和错误；只覆盖回环 API，不代表浏览器首次可读或门户认证性能。旧目录全量响应与新版窗口响应的大小会分别记录。
+
 ## 数据与项目文档
 
 本地测试数据与输出放入 `.local/`。真实正文、封面、数据库、个人业务数据及凭据不提交 Git。工程设计、实施验收和进度记录继续维护在 Obsidian 的 `HomeProjects/06projects/个人小说书屋`。

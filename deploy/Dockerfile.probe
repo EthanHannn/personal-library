@@ -1,0 +1,12 @@
+# M0 uses the statically cross-compiled binary. Build on a workstation or CI.
+FROM scratch
+ARG VCS_REF=development
+LABEL org.opencontainers.image.source="https://github.com/EthanHannn/personal-library"
+LABEL org.opencontainers.image.revision=$VCS_REF
+COPY --chown=65532:65532 bin/library-linux-amd64 /library
+USER 65532:65532
+ENV GOMEMLIMIT=160MiB
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["/library", "healthcheck"]
+ENTRYPOINT ["/library"]
+CMD ["probe", "--listen", "0.0.0.0:8080", "--db", "/fixture/library.db", "--novels", "/fixture/novels", "--manifest", "/fixture/manifest.json"]
