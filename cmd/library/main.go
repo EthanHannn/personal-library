@@ -16,6 +16,7 @@ import (
 	"github.com/EthanHannn/personal-library/internal/legacy"
 	"github.com/EthanHannn/personal-library/internal/probe"
 	"github.com/EthanHannn/personal-library/internal/reader"
+	"github.com/EthanHannn/personal-library/internal/storage"
 )
 
 func main() {
@@ -27,7 +28,18 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: library probe [flags] | healthcheck [--url URL] | metrics")
+		return fmt.Errorf("usage: library migrate | probe | verify-legacy | healthcheck | metrics")
+	}
+	if os.Args[1] == "migrate" {
+		fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
+		db := fs.String("db", "", "new business database (never the legacy snapshot)")
+		if err := fs.Parse(os.Args[2:]); err != nil {
+			return err
+		}
+		if *db == "" || fs.NArg() != 0 {
+			return fmt.Errorf("migrate requires --db")
+		}
+		return storage.Migrate(context.Background(), *db)
 	}
 	if os.Args[1] == "metrics" {
 		metrics, err := probe.ContainerMetrics()
