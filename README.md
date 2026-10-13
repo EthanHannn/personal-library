@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0–M2 阅读主链及 M3 首批首页/书架功能已实现并进行本地验收。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；M3 后续继续补齐完整检索、评价、管理导入和持久封面任务，本项目尚不能替代生产站点。
+M0–M2 阅读主链及 M3 首页/书架、检索筛选和分类/作者页面已实现并进行本地验收。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；M3 后续继续补齐评价、推荐、管理导入和持久封面任务，本项目尚不能替代生产站点。
 
 ## 开发
 
@@ -34,7 +34,9 @@ go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels -
 
 默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
 
-Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/` 首页、`/library`、`/bookshelf`、`/book/:id`、`/read/:id?c=N`。首页包含精选轮播、最近阅读、高分和最近入库；精选从最多 30 部高分且有正文的仙草票候选中随机取 5 部，轮播由读者手动切换。馆藏统计覆盖全部已审核书目，高分栏目只是一种浏览预设，低分或无正文书目仍可收藏。
+Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/` 首页、`/library`、`/category/:tag`、`/author/:name`、`/bookshelf`、`/book/:id`、`/read/:id?c=N`。分类/作者名称按一个 URL 段编码，可包含中文及特殊字符。首页包含精选轮播、最近阅读、高分和最近入库；精选从最多 30 部高分且有正文的仙草票候选中随机取 5 部，轮播由读者手动切换。馆藏统计覆盖全部已审核书目，高分栏目只是一种浏览预设，低分或无正文书目仍可收藏。
+
+书库默认显示 7.5 分以上且有正文的作品，可切换到全部馆藏。搜索、主副分类、评分/字数范围、正文筛选、排序与页码保存在 URL 中，刷新与后退会恢复；分类和作者页沿用同一套筛选。搜索仅匹配书名和作者，支持中文单字与双字，`%`、`_` 和引号均按字面处理；ASCII 不区分大小写，不做正文检索或别名扩展。分类目录的计数覆盖全部已审核馆藏，结果区统计则对应当前筛选。
 
 书架收藏与阅读记录独立：收藏不创建进度，移出不删除进度。`/bookshelf?view=reading` 显示所有近期阅读，不要求收藏。两类列表每页默认 24 条（最多 48），以时间和原记录 ID 组成游标，重复收藏保留原顺序；列表持续变化时可刷新返回最新记录，并非固定快照。首页/书架的续读链接不强加章号，由阅读器协调服务端与本机待同步位置。
 
@@ -53,13 +55,19 @@ TTS 使用设备的 Web Speech 音色，支持语速、暂停/恢复、前后段
 | `/api/v1/shelf?cursor=...&limit=24` | 当前读者的收藏与相关进度；按收藏时间和 ID 分页 |
 | `/api/v1/reading?cursor=...&limit=24` | 当前读者的阅读记录，独立于收藏；按最近阅读时间和 ID 分页 |
 | `/api/v1/books/:id/shelf` | PUT 加入、DELETE 移出；JSON 请求体 `{}`，可安全重试 |
-| `/api/v1/books?after=0&limit=24` | 首批分页书目；暂未实现完整检索/筛选 |
+| `/api/v1/books?page=1&limit=24` | 参数化搜索/筛选、六种排序、页码及总数；每页最多 48 本 |
+| `/api/v1/categories` | 全部已审核馆藏的主分类、副分类及计数 |
+| `/api/v1/books?after=0&limit=24` | 保留 M1 的 ID 递增窗口；不能与筛选或页码参数混用 |
 | `/api/v1/books/:id` | 已审核书目的基本详情、收藏状态及进度 |
 | `/api/v1/books/:id/chapters?after=0&limit=100` | 当前内容版本的目录窗口 |
 | `/api/v1/books/:id/chapters/:idx/content` | 有界正文块及签名续读游标 |
 | `/api/v1/books/:id/reader?chapter=N` | 聚合首次正文、服务端进度、书架状态与邻章；显式章号优先 |
 | `/api/v1/books/:id/directory?after=0&q=标题` | 作品内按号分页及标题检索，每次最多 100 条 |
 | `/api/v1/books/:id/progress` | GET 当前进度；PUT 比较版本并原子保存 |
+
+书目分页 API 接受 `search`（最多 100 字）、`author`（精确作者）、`tag`（主/副分类任一匹配）、`tag1`、`tag2`、`minScore/maxScore`（0–10）、`minWords/maxWords`、`onlyContent`（0/1），以及 `sortBy=score|xiancao|popularity|latest|words|title`。按评分/仙草票/评价人数/入库时间/字数降序或书名升序，再以 ID 降序打破平局。API 未指定筛选时包含全部已审核书目；浏览器显式传入自己的预设。无 `page` 或任何筛选参数时，仍返回 M1 窗口协议。
+
+页码范围 1–10,000，超出实际末页时返回末页，空结果返回第 1 页和 `totalPages=0`。同一次请求的计数与书目共用读事务快照；多次翻页之间如有评分或元数据更新，顺序可以变化。未知、重复参数、非法数值和倒置范围返回 400；客户端不能通过 `status` 读取待审核书目。查询只访问书目及评分快照，未增加 FTS、章节扫描、缓存或新 schema 迁移。
 
 进度 PUT 包含 `chapterIdx`、`percent`（0–1）、`contentVersion`、`anchor: {block, paragraph, character}`，以及 `baseRevision`、`deviceId`、`clientSeq`、`mutationId`。`block` 使用正文响应的 `blockToken`；段落起点和段内位置按 Unicode 码点计数。服务端验证签名、文件版本和段落范围，冲突返回 409 及当前/提交位置。每本书保留最近 128 次成功请求的原始回执，持久化设备序号防止更旧的重试覆盖新值。签名密钥保存在数据库中，随备份保留，正式服务重启不使锚点失效。
 
@@ -77,11 +85,13 @@ go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
 `deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及三个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
 
-CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的基础、进度、首页/书架和重启恢复。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`、`node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json` 和 `node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --out .local/shelf-smoke.json`。M2/M3 脚本在重启后分别加 `--resume` 和对应报告路径，验证持久进度/回执与收藏。只对独立合成库运行写入检查。
+CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的基础、进度、首页/书架、检索和重启恢复。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`、`node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json` 和 `node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --out .local/shelf-smoke.json`。M2/M3 脚本在重启后分别加 `--resume` 和对应报告路径，验证持久进度/回执与收藏。书库只读回归用 `node tools/m3/catalog-smoke.mjs --base http://127.0.0.1:16871`。这些脚本只用于独立合成库。
 
 本地浏览器测试可启动 `node tools/m2/browser-gateway.mjs`，访问 `http://127.0.0.1:16872`。该回环测试网关使用合成会话和可控 503/401，只用于故障回归，不是 Authelia，也不用于生产部署。`tools/m2/measure-progress.mjs` 可与 M0 读取测量脚本同时运行，记录同步写入延迟。
 
 M3 首批可用 `node tools/m3/measure.mjs --base http://127.0.0.1:16871 --container personal-library-m3 --fixture .local/m0/fixture-summary.json --seconds 30 --out .local/reports/m3-mixed-read.json` 做 5 路混合读取短测。每轮各请求一次首页、书架、最近阅读、详情和正文；报告记录延迟、响应字节及容器内存。它不包含封面/导入任务、写入或门户开销，不代替 M4 完整性能验收。
+
+检索演练可先用 `python tools/m3/catalog-fixture.py --source .local/m3/library.db --output .local/m3-catalog` 创建独立副本；目标目录必须不存在。脚本使用 SQLite backup，变化书目元数据以覆盖分类、评分和特殊字符，保留正文、章节索引及前 5 本基础样本。将容器指向该副本后，给上述测量命令加 `--catalog`，并把 `--fixture` 改为 `.local/m3-catalog/fixture-report.json`，测量深页短词搜索、组合筛选、作者、分类和分类计数。`python tools/m3/catalog-plans.py --db .local/m3-catalog/library.db --out .local/reports/catalog-plans.json` 记录 Python SQLite 的查询计划；发布性能由 Go 容器请求单独实测。
 
 ## 业务库与旧库迁移
 
