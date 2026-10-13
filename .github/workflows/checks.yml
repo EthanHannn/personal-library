@@ -20,7 +20,41 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci --ignore-scripts
+      - run: npm --prefix web run build
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -tags release ./...
       - if: runner.os == 'Linux'
-        run: go test -race ./...
+        run: go test -race -tags release ./...
+      - if: runner.os == 'Linux'
+        name: Check generated SQL
+        run: |
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
+          git diff --exit-code -- internal/storage/dbgen
+      - if: runner.os == 'Linux'
+        name: Build static release image
+        run: |
+          CGO_ENABLED=0 go build -tags release -trimpath -ldflags '-s -w' -o bin/library-linux-amd64 ./cmd/library
+          docker build -f deploy/Dockerfile --build-arg VCS_REF=${{ github.sha }} -t personal-library:check .
+      - if: runner.os == 'Linux'
+        name: Rehearse import and release container
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/m0/fixture.py --output .local/smoke --books 5 --chapters 128 --large-mib 1
+          mkdir -p .local/smoke-target
+          bin/library-linux-amd64 migrate --db .local/smoke-target/library.db
+          bin/library-linux-amd64 import-legacy --source .local/smoke/library.db --db .local/smoke-target/library.db --novels .local/smoke/novels --manifest .local/smoke/manifest.json --portal-user owner --source-version synthetic-ci
+          sudo chown -R 65532:65532 .local/smoke-target
+          docker run -d --name library-check --read-only --memory 256m --cpus 1 -p 127.0.0.1:16871:8080 -v "$PWD/.local/smoke-target:/data/library" -v "$PWD/.local/smoke/novels:/data/novels:ro" -e PORTAL_ALLOWED_USER=owner -e LIBRARY_PUBLIC_URL=https://library.example.test -e PORTAL_AUTH_URL=https://auth.example.test personal-library:check
+          trap 'docker logs library-check; docker rm -f library-check' EXIT
+          for attempt in {1..20}; do
+            if docker exec library-check /library healthcheck; then break; fi
+            sleep 1
+          done
+          node tools/m1/smoke.mjs --base http://127.0.0.1:16871

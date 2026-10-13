@@ -28,7 +28,10 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: library migrate | import-legacy | probe | verify-legacy | healthcheck | metrics")
+		return fmt.Errorf("usage: library serve | migrate | import-legacy | probe | verify-legacy | healthcheck | metrics")
+	}
+	if os.Args[1] == "serve" {
+		return serve(os.Args[2:])
 	}
 	if os.Args[1] == "migrate" {
 		fs := flag.NewFlagSet("migrate", flag.ContinueOnError)

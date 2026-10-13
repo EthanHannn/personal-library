@@ -6,19 +6,58 @@ M0 后端原型已验证，当前实施 M1：版本化业务库、可恢复迁�
 
 ## 开发
 
-需要 Go 1.27.1。依赖版本由 `go.mod` / `go.sum` 锁定。
+需要 Go 1.27.1 和 Node.js 24（仅构建前端时使用）。依赖版本由 `go.mod` / `go.sum` 及 `web/package-lock.json` 锁定。
 
 ```sh
 go test ./...
 go vet ./...
 go test ./internal/reader -bench . -benchmem
+npm --prefix web ci --ignore-scripts
+npm --prefix web run build
+go test -tags release ./...
 ```
 
 阅读内核通过 `os.Root` 将文件访问限制在书库内，用 `ReadAt` 读取有上限的字节范围。支持 UTF-8、UTF-8 BOM 和 GB18030，正文块最多 256 KiB UTF-8；续读位置保留原始文件字节偏移。编码由调用方提供，读取时不猜测或转写原文件。
 
 GB18030 解码与旧版镜像的 `TextDecoder` 对齐（Node 20.20.2 / ICU 78.2），补齐 Go 解码库缺少的私用区和新版标点映射。测试包含 63,360 组双字节/BMP 四字节序列的独立参考哈希、补充平面字符、分块与随机输入。`tools/m0/encoding-reference.mjs` 可在旧版运行时重新生成参考；更改解码规则时须更新内容版本。
 
-原型返回原始解码正文，尚未实现界面、标题/缩进规范化、个人数据同步或封面任务。安全边界、版本校验和编码错误具有自动化测试。
+正文仍返回原始解码文本。当前界面支持分页浏览、详情和逐块阅读预览；预览不保存阅读进度。标题/缩进规范化、完整阅读器、个人数据同步和封面任务按后续阶段实施。
+
+## 正式服务与静态应用
+
+完成下方迁移后，设置门户测试环境变量并运行：
+
+```sh
+go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels --web-dir web/dist
+```
+
+默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
+
+Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/library`、`/book/:id`、`/read/:id?c=N`。每次正文预览只保留一个有上限的块，继续读取后替换当前块；完整阅读、目录、偏好和可靠进度在 M2 实施。没有额外登录表单。
+
+| 路径 | 行为 |
+| --- | --- |
+| `/api/v1/me` | 数据库中的默认读者及统一退出地址 |
+| `/api/v1/books?after=0&limit=24` | 首批分页书目；暂未实现完整检索/筛选 |
+| `/api/v1/books/:id` | 已审核书目的基本详情 |
+| `/api/v1/books/:id/chapters?after=0&limit=100` | 当前内容版本的目录窗口 |
+| `/api/v1/books/:id/chapters/:idx/content` | 有界正文块及签名续读游标 |
+
+HTML、脚本、API 均处于同一认证边界，使用 `private, no-store`；缺失 API/资源返回 JSON 404，SPA 回退只接受明确的页面路由。`/login`、`/register`、`/auth/signin` 固定跳回本站首页，由既有网关处理登录。`/api/health` 只在应用内部免身份，公网 nginx 路由仍须认证。浏览器端不会自行添加 `Remote-User`。
+
+正常查询由固定版本 sqlc 生成，修改 SQL 后运行：
+
+```sh
+go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
+```
+
+### 单容器发布骨架（本地演练）
+
+前端构建后，交叉编译 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags release -trimpath -ldflags '-s -w' -o bin/library-linux-amd64 ./cmd/library`，再执行 `docker build -f deploy/Dockerfile -t personal-library:local .`。PowerShell 需通过 `$env:GOOS='linux'` 等设置变量。`release` 构建将 `web/dist` 嵌入 Go 二进制，运行时没有 Node 服务。
+
+`deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及三个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
+
+CI 在 Windows/Linux 上构建前端及运行 Go 测试；Linux 另检查 race、sqlc 生成一致性、导入合成小库并运行真实发布容器的 27 项冒烟检查。可在已运行的合成环境中复用：`node tools/m1/smoke.mjs --base http://127.0.0.1:16871`。
 
 ## 业务库与旧库迁移
 

@@ -17,6 +17,7 @@
 # Build and tooling outputs
 /bin/
 /dist/
+/web/dist/
 *.exe
 *.test
 *.out

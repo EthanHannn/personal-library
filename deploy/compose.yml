@@ -1,0 +1,30 @@
+services:
+  library:
+    image: ${LIBRARY_IMAGE:-personal-library:local}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LIBRARY_HOST_PORT:-16871}:8080"
+    environment:
+      PORTAL_ALLOWED_USER: ${PORTAL_ALLOWED_USER:?set the trusted portal username}
+      LIBRARY_PUBLIC_URL: ${LIBRARY_PUBLIC_URL:?set the HTTPS library origin}
+      PORTAL_AUTH_URL: ${PORTAL_AUTH_URL:?set the HTTPS Authelia origin}
+    volumes:
+      - type: bind
+        source: ${LIBRARY_DATA_DIR:?set the absolute business database directory}
+        target: /data/library
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LIBRARY_NOVEL_ROOT:?set the absolute immutable novel directory}
+        target: /data/novels
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1

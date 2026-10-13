@@ -15,6 +15,22 @@ import (
 )
 
 func verify(ctx context.Context, source *sql.Tx, target *storage.Database, r *reader.Reader, o Options, report *Report) error {
+	var fileCount int
+	if err := target.Read.QueryRowContext(ctx, `SELECT count(*) FROM files`).Scan(&fileCount); err != nil {
+		return err
+	}
+	if fileCount != len(report.Files) {
+		return fmt.Errorf("file manifest reconciliation failed")
+	}
+	for _, expected := range report.Files {
+		var observed File
+		if err := target.Read.QueryRowContext(ctx, `SELECT path,encoding,size,modified_ns,sha256 FROM files WHERE path=?`, expected.Path).Scan(&observed.Path, &observed.Encoding, &observed.Size, &observed.ModifiedNS, &observed.SHA256); err != nil {
+			return err
+		}
+		if observed != expected {
+			return fmt.Errorf("file manifest reconciliation failed")
+		}
+	}
 	for _, m := range mappings {
 		rows, err := source.QueryContext(ctx, "SELECT "+m.fields+" FROM "+m.source+" WHERE "+m.predicate+" ORDER BY id")
 		if err != nil {

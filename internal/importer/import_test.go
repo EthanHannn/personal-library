@@ -297,6 +297,27 @@ func TestRejectSameFileAndActiveWAL(t *testing.T) {
 	}
 }
 
+func TestResumeChecksTargetFileMetadata(t *testing.T) {
+	ctx := context.Background()
+	o := fixture(t, "")
+	o.MaxBatches = 1
+	if _, err := Import(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	db, err := storage.Open(ctx, o.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Write.Exec(`UPDATE files SET encoding='gb18030'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	o.MaxBatches = 0
+	if report, err := Import(ctx, o); err == nil || report.Complete || !strings.Contains(err.Error(), "manifest reconciliation") {
+		t.Fatalf("changed file metadata accepted: %+v %v", report, err)
+	}
+}
+
 func TestCancelledImportResumes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	o := fixture(t, "")

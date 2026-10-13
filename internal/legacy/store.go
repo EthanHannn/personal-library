@@ -11,28 +11,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/EthanHannn/personal-library/internal/catalog"
 	_ "modernc.org/sqlite"
 )
 
 var (
-	ErrNotFound  = errors.New("book or chapter not found")
-	ErrAmbiguous = errors.New("duplicate chapter index")
+	ErrNotFound  = catalog.ErrNotFound
+	ErrAmbiguous = catalog.ErrAmbiguous
 )
 
-type Book struct {
-	ID           int64  `json:"id"`
-	Title        string `json:"title"`
-	Author       string `json:"author"`
-	ChapterCount int64  `json:"chapterCount"`
-	FilePath     string `json:"-"`
-}
-
-type Chapter struct {
-	Index int64  `json:"idx"`
-	Title string `json:"title"`
-	Start int64  `json:"-"`
-	End   int64  `json:"-"`
-}
+type Book = catalog.Book
+type Chapter = catalog.Chapter
 
 type Store struct{ db *sql.DB }
 
