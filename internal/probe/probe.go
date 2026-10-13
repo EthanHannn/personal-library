@@ -30,10 +30,11 @@ type Manifest struct {
 }
 
 type App struct {
-	store  *legacy.Store
-	reader *reader.Reader
-	files  map[string]reader.File
-	key    [32]byte
+	store    *legacy.Store
+	reader   *reader.Reader
+	files    map[string]reader.File
+	key      [32]byte
+	requests chan struct{}
 }
 
 func LoadManifest(path string) (Manifest, error) {
@@ -58,7 +59,7 @@ func LoadManifest(path string) (Manifest, error) {
 }
 
 func New(s *legacy.Store, r *reader.Reader, m Manifest) (*App, error) {
-	a := &App{store: s, reader: r, files: make(map[string]reader.File)}
+	a := &App{store: s, reader: r, files: make(map[string]reader.File), requests: make(chan struct{}, 8)}
 	if m.Version != 1 || len(m.Files) == 0 {
 		return nil, fmt.Errorf("invalid file manifest")
 	}
@@ -87,6 +88,14 @@ func (a *App) Handler(config gateway.Config) http.Handler {
 	mux.HandleFunc("GET /api/v1/books/{id}/chapters", a.chapters)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { gateway.Error(w, 404, "not_found", "接口不存在") })
 	protected := config.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case a.requests <- struct{}{}:
+			defer func() { <-a.requests }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			gateway.Error(w, 429, "busy", "正在处理其他请求，请稍后重试")
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		mux.ServeHTTP(w, r.WithContext(ctx))

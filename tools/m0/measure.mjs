@@ -9,6 +9,7 @@ const { values } = parseArgs({ options: {
   target: { type: 'string' }, base: { type: 'string' }, container: { type: 'string' },
   out: { type: 'string' }, fixture: { type: 'string' },
   seconds: { type: 'string', default: '1800' }, samples: { type: 'string', default: '300' },
+  concurrency: { type: 'string', default: '1' },
   collector: { type: 'string', default: '/library' },
 } })
 if (!['legacy', 'go'].includes(values.target) || !values.base || !values.container || !values.out || !values.fixture)
@@ -18,8 +19,11 @@ if (base.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(b
   throw new Error('Benchmarks must target an isolated loopback server')
 const seconds = Number(values.seconds)
 const samples = Number(values.samples)
+const concurrency = Number(values.concurrency)
 if (!Number.isInteger(seconds) || seconds < 0 || seconds > 7200 || !Number.isInteger(samples) || samples < 1 || samples > 10000)
   throw new Error('Invalid duration or sample count')
+if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8)
+  throw new Error('Concurrency must be between 1 and 8')
 const fixture = JSON.parse(await readFile(values.fixture, 'utf8'))
 if (fixture.synthetic !== true) throw new Error('Only generated synthetic fixtures are supported')
 await mkdir(dirname(values.out), { recursive: true })
@@ -62,18 +66,19 @@ const report = {
   measurement: 'isolated loopback API; synthetic data; no browser/portal overhead',
   cache: 'application first request recorded separately; OS page cache uncontrolled; no global cache eviction',
   collector: 'same static metrics helper in each container; PID 1 RSS excludes helper, cgroup includes it',
-  runtime: { node: process.version, image: inspect.Image,
+  runtime: { clientNode: process.version, image: inspect.Image,
     revision: inspect.Config.Labels?.['org.opencontainers.image.revision'],
     memoryLimitBytes: inspect.HostConfig.Memory, nanoCPUs: inspect.HostConfig.NanoCpus },
-  fixture, plannedSoakSeconds: seconds, metrics: [], queries: {}, errors: [],
+  fixture, concurrency, plannedSoakSeconds: seconds, metrics: [], queries: {}, errors: [],
 }
 try {
   report.metrics.push(metrics('idle'))
   report.firstRead = await request(route(1))
   report.metrics.push(metrics('after first large-file chapter'))
   const chapterRecords = []
-  for (let i = 0; i < samples; i++)
-    chapterRecords.push(await request(route(1 + ((i * 137) % fixture.largeFileChapters))))
+  for (let i = 0; i < samples; i += concurrency)
+    chapterRecords.push(...await Promise.all(Array.from({ length: Math.min(concurrency, samples - i) },
+      (_, k) => request(route(1 + (((i + k) * 137) % fixture.largeFileChapters))))))
   report.queries.chapter = summary(chapterRecords)
   const catalogRecords = []
   for (let i = 0; i < Math.min(samples, 30); i++) {
@@ -93,7 +98,8 @@ try {
   const soak = []
   let i = 0
   while (performance.now() - soakStarted < seconds * 1000) {
-    soak.push(await request(route(1 + ((i++ * 137) % fixture.largeFileChapters))))
+    soak.push(...await Promise.all(Array.from({ length: concurrency },
+      () => request(route(1 + ((i++ * 137) % fixture.largeFileChapters))))))
     if (performance.now() >= nextMetric) {
       report.metrics.push(metrics(`soak ${Math.round((performance.now() - soakStarted) / 1000)}s`))
       nextMetric = performance.now() + 10000

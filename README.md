@@ -47,7 +47,7 @@ PORTAL_AUTH_URL=https://auth.example.test
 | `/api/v1/books/1/chapters?after=0&limit=100` | 按章节号定位，最多 200 条 |
 | `/api/v1/books/1/chapters/1/content` | 首个正文块；用返回的 `nextCursor` 继续读取 |
 
-所有响应为 `private, no-store`。续读游标绑定作品、章节与文件版本，并由服务签名；服务重启后需要重新打开章节。数据库使用只读连接、每连接 8 MiB 页缓存，正文读取并发上限为 4。文件大小和修改时间检查不等同于完整指纹校验，原型要求输入快照及正文保持不变。
+所有响应为 `private, no-store`。续读游标绑定作品、章节与文件版本，并由服务签名；服务重启后需要重新打开章节。数据库使用只读连接、每连接 8 MiB 页缓存，正文读取并发上限为 4，包含响应写出的 HTTP 并发上限为 8（超限返回 429）。文件大小和修改时间检查不等同于完整指纹校验，原型要求输入快照及正文保持不变。
 
 `verify-legacy` 是本地只读校验命令，无需门户环境变量。它运行 SQLite `quick_check`，按索引顺序扫描全部章节，检查编号、数量、孤儿、重叠、文件版本及字节边界；错误示例最多保存 100 条，总数不截断。它不会自动修复源数据，也不代替迁移阶段的完整指纹、正文解码及个人数据关联验收。
 
@@ -64,6 +64,8 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 旧版测量将 `--target` 改为 `legacy`，指定其回环端口和容器名，并把同一静态二进制只读挂载到 `/bench/library`，加 `--collector /bench/library`。每份报告使用新文件名。采样包含 PID 1 RSS、cgroup v2 的 current/anon/file、p50/p95、响应大小和错误；只覆盖回环 API，不代表浏览器首次可读或门户认证性能。旧目录全量响应与新版窗口响应的大小会分别记录。
 
 后台重任务预算使用合成图片验证：`go run ./cmd/library fixture-cover --output .local/m0/cover.jpg` 创建 4096×4096 JPEG；为原型启动命令添加 `--image-workload /fixture/cover.jpg` 后，每 10 秒串行解码一次并编码三个缩略尺寸。仅用于 M0 资源测试，不抓取网络图片、不发布封面、不修改数据库，也不代表持久任务已经实现。以 256 MiB 容器上限运行 30 分钟测量，可检查持续读取与单个图片任务并行的峰值。
+
+测量工具默认单并发；加 `--concurrency 5` 检查五个会话的余量。报告中的 `clientNode` 为负载工具版本，应用引擎版本应从对应镜像与 `verify-legacy` 的 `sqliteVersion` 核对。
 
 ## 数据与项目文档
 

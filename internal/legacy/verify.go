@@ -20,12 +20,16 @@ type Verification struct {
 	Problems      int64     `json:"problemCount"`
 	Examples      []Problem `json:"examples"`
 	QuickCheck    string    `json:"quickCheck"`
+	SQLiteVersion string    `json:"sqliteVersion"`
 }
 
 // Verify scans chapters using a bounded cursor. fileSize validates the captured
 // file version and returns its size; no source tables or files are changed.
 // Examples are capped, while the total problem count remains exact.
 func (s *Store) Verify(ctx context.Context, fileSize func(string) (int64, error)) (report Verification, err error) {
+	if err = s.db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&report.SQLiteVersion); err != nil {
+		return report, err
+	}
 	add := func(code string, book, chapter int64) {
 		report.Problems++
 		if len(report.Examples) < 100 {

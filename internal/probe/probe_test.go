@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,5 +154,43 @@ func TestAPIContract(t *testing.T) {
 		if w.Code != tc.code || !json.Valid(w.Body.Bytes()) || w.Header().Get("Cache-Control") != "private, no-store" {
 			t.Fatalf("%s: %d %s", tc.path, w.Code, w.Body.String())
 		}
+	}
+}
+
+type waitingWriter struct {
+	*httptest.ResponseRecorder
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (w waitingWriter) Write(data []byte) (int, error) {
+	w.entered <- struct{}{}
+	<-w.release
+	return w.ResponseRecorder.Write(data)
+}
+
+func TestSlowResponsesBoundConcurrency(t *testing.T) {
+	h, _, _ := testApp(t)
+	entered := make(chan struct{}, 8)
+	release := make(chan struct{})
+	var wg sync.WaitGroup
+	defer func() { close(release); wg.Wait() }()
+	for range 8 {
+		wg.Go(func() {
+			r := httptest.NewRequest("GET", "/api/v1/me", nil)
+			r.Header.Set("Remote-User", "owner")
+			h.ServeHTTP(waitingWriter{httptest.NewRecorder(), entered, release}, r)
+		})
+	}
+	for range 8 {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("requests did not reach response writer")
+		}
+	}
+	w := request(h, "/api/v1/me", "owner")
+	if w.Code != 429 || w.Header().Get("Retry-After") != "1" {
+		t.Errorf("overload response: %d %s", w.Code, w.Body.String())
 	}
 }
