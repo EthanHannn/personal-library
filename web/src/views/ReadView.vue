@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import ChapterPreview from '../components/reader/ChapterPreview.vue'
+import { useRoute } from 'vue-router'
+import ReaderSession from '../components/reader/ReaderSession.vue'
+const route = useRoute()
 </script>
 
 <template>
-  <ChapterPreview />
+  <ReaderSession :key="String(route.params.id)" :book-id="Number(route.params.id)" />
 </template>

@@ -22,22 +22,55 @@ export interface ContentBlock {
   text: string
   contentVersion: string
   nextCursor: string | null
+  blockToken: string
+  blockStart: number
+  blockEnd: number
+  chapterStart: number
+  chapterEnd: number
+}
+
+export interface Position {
+  chapterIdx: number
+  percent: number
+  contentVersion?: string
+  anchor?: { block: string; paragraph: number; character: number }
+}
+export interface Progress extends Position { revision: number; updatedAt: number }
+export interface Mutation extends Position {
+  baseRevision: number
+  deviceId: string
+  clientSeq: number
+  mutationId: string
+}
+export interface ReadingState {
+  book: ContentBlock['book']
+  content: ContentBlock | null
+  progress: Progress | null
+  inShelf: boolean
+  previous: ContentBlock['chapter'] | null
+  next: ContentBlock['chapter'] | null
+  recoveryRequired: boolean
 }
 
 export class APIError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code = '', readonly progress: Progress | null = null) {
     super(message)
   }
 }
 
 export async function getJSON<T>(path: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error' })
+  return requestJSON<T>(path, { signal })
+}
+
+export async function requestJSON<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { ...options, credentials: 'same-origin', cache: 'no-store', redirect: 'error' })
+  if (response.status === 401 || response.status === 403) window.dispatchEvent(new Event('library:auth-lost'))
   if (!response.headers.get('content-type')?.startsWith('application/json')) {
     throw new APIError('未能读取书屋数据，请刷新页面后重试。', response.status)
   }
   const body = await response.json()
   if (!response.ok) {
-    throw new APIError(body.error?.message ?? '暂时无法读取，请重试。', response.status)
+    throw new APIError(body.error?.message ?? '暂时无法读取，请重试。', response.status, body.error?.code, body.progress ?? null)
   }
   return body as T
 }

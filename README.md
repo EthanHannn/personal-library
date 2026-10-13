@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0、M1 已完成，当前实施 M2 完整阅读器与可靠进度。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；本项目尚不能替代生产站点。
+M0、M1 和 M2 阅读主链已实现并进行本地验收。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；书架管理、完整检索、评价和封面任务等将在 M3 补齐，本项目尚不能替代生产站点。
 
 ## 开发
 
@@ -13,6 +13,7 @@ go test ./...
 go vet ./...
 go test ./internal/reader -bench . -benchmem
 npm --prefix web ci --ignore-scripts
+npm --prefix web test
 npm --prefix web run build
 go test -tags release ./...
 ```
@@ -21,7 +22,7 @@ go test -tags release ./...
 
 GB18030 解码与旧版镜像的 `TextDecoder` 对齐（Node 20.20.2 / ICU 78.2），补齐 Go 解码库缺少的私用区和新版标点映射。测试包含 63,360 组双字节/BMP 四字节序列的独立参考哈希、补充平面字符、分块与随机输入。`tools/m0/encoding-reference.mjs` 可在旧版运行时重新生成参考；更改解码规则时须更新内容版本。
 
-正文仍返回原始解码文本。当前界面支持分页浏览、详情和逐块阅读预览；预览不保存阅读进度。标题/缩进规范化、完整阅读器、个人数据同步和封面任务按后续阶段实施。
+正文 API 保留原始解码文本，界面将重复的首行章名合并到标题展示。阅读器支持目录、按号跳章、邻章预取、六套主题、字号、彩色正文和浏览器 TTS，以及本机暂存、服务端保存与冲突选择。
 
 ## 正式服务与静态应用
 
@@ -33,7 +34,13 @@ go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels -
 
 默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
 
-Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/library`、`/book/:id`、`/read/:id?c=N`。每次正文预览只保留一个有上限的块，继续读取后替换当前块；完整阅读、目录、偏好和可靠进度在 M2 实施。没有额外登录表单。
+Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/library`、`/book/:id`、`/read/:id?c=N`。无章号时恢复进度，显式章号优先。目录每窗 100 条并虚拟渲染；正文逐块追加，附近最多 3 章且总文本预算约 2 MiB，超长章节分窗继续，有文本选择时不替换旧窗口。预取在后台页面及节省流量模式暂停。没有额外登录表单。
+
+进度约每秒写入 IndexedDB，约每 7 秒合并同步，并在切章/隐藏/离开时补发。已发送请求与更新的本机草稿分开保存，重复发送复用原 mutation；409 由读者选择本机或服务端位置。多标签用 BroadcastChannel 与 IndexedDB 事务协调，最终由服务端版本检查保护。401/403 会停止朗读和预取、清空当前正文，保留待同步位置；重新进入前台先验证会话。
+
+同源旧 `zx_reading_*` 与阅读偏好键首次打开时复制到新命名空间，旧键保留。旧版 percent 按章节内容比例近似恢复，成功阅读后才保存精确锚点；其他域名的浏览器状态不自动迁移。页关闭前发送仅为尽力处理，可靠恢复依靠已经完成的本机暂存。浏览器存储被禁用时明确显示无法保存。
+
+TTS 使用设备的 Web Speech 音色，支持语速、暂停/恢复、前后段、高亮跟随及跨正文块续读。隐藏页面时暂停，切章、失去认证和卸载时停止。设备音色/音频和手机锁屏行为仍需在目标设备上验收。
 
 | 路径 | 行为 |
 | --- | --- |

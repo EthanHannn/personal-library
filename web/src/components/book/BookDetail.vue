@@ -15,7 +15,7 @@ const { data, pending, error, reload } = useRequest<{ book: Book }>(() => `/api/
     <h1>{{ data.book.title }}</h1>
     <p class="muted">{{ data.book.author }} · {{ data.book.wordCount.toLocaleString() }} 字 · {{ data.book.score.toFixed(1) }} 分</p>
     <p class="intro">{{ data.book.intro || '这本书还没有简介。' }}</p>
-    <RouterLink v-if="data.book.hasContent" class="button" :to="`/read/${data.book.id}?c=1`">阅读预览</RouterLink>
+    <RouterLink v-if="data.book.hasContent" class="button" :to="`/read/${data.book.id}`">打开阅读</RouterLink>
     <p v-else class="muted">暂未收录正文。</p>
   </article>
 </template>

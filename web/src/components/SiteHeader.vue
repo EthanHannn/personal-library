@@ -3,6 +3,7 @@ import type { Identity } from '../api'
 import { useRequest } from '../composables/useRequest'
 
 const { data } = useRequest<Identity>('/api/v1/me')
+function logout() { window.dispatchEvent(new Event('library:auth-lost')) }
 </script>
 
 <template>
@@ -12,7 +13,7 @@ const { data } = useRequest<Identity>('/api/v1/me')
       <nav class="nav" aria-label="主导航">
         <RouterLink to="/library">书库</RouterLink>
         <span v-if="data" class="nickname">{{ data.user.nickname }}</span>
-        <a v-if="data" :href="data.logoutUrl">退出</a>
+        <a v-if="data" :href="data.logoutUrl" @click="logout">退出</a>
       </nav>
     </div>
   </header>
