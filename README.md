@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0、M1 和 M2 阅读主链已实现并进行本地验收。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；书架管理、完整检索、评价和封面任务等将在 M3 补齐，本项目尚不能替代生产站点。
+M0–M2 阅读主链及 M3 首批首页/书架功能已实现并进行本地验收。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务；M3 后续继续补齐完整检索、评价、管理导入和持久封面任务，本项目尚不能替代生产站点。
 
 ## 开发
 
@@ -34,7 +34,11 @@ go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels -
 
 默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
 
-Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/library`、`/book/:id`、`/read/:id?c=N`。无章号时恢复进度，显式章号优先。目录每窗 100 条并虚拟渲染；正文逐块追加，附近最多 3 章且总文本预算约 2 MiB，超长章节分窗继续，有文本选择时不替换旧窗口。预取在后台页面及节省流量模式暂停。没有额外登录表单。
+Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/` 首页、`/library`、`/bookshelf`、`/book/:id`、`/read/:id?c=N`。首页包含精选轮播、最近阅读、高分和最近入库；精选从最多 30 部高分且有正文的仙草票候选中随机取 5 部，轮播由读者手动切换。馆藏统计覆盖全部已审核书目，高分栏目只是一种浏览预设，低分或无正文书目仍可收藏。
+
+书架收藏与阅读记录独立：收藏不创建进度，移出不删除进度。`/bookshelf?view=reading` 显示所有近期阅读，不要求收藏。两类列表每页默认 24 条（最多 48），以时间和原记录 ID 组成游标，重复收藏保留原顺序；列表持续变化时可刷新返回最新记录，并非固定快照。首页/书架的续读链接不强加章号，由阅读器协调服务端与本机待同步位置。
+
+阅读页无章号时恢复进度，显式章号优先。目录每窗 100 条并虚拟渲染；正文逐块追加，附近最多 3 章且总文本预算约 2 MiB，超长章节分窗继续，有文本选择时不替换旧窗口。预取在后台页面及节省流量模式暂停。没有额外登录表单。
 
 进度约每秒写入 IndexedDB，约每 7 秒合并同步，并在切章/隐藏/离开时补发。已发送请求与更新的本机草稿分开保存，重复发送复用原 mutation；409 由读者选择本机或服务端位置。多标签用 BroadcastChannel 与 IndexedDB 事务协调，最终由服务端版本检查保护。401/403 会停止朗读和预取、清空当前正文，保留待同步位置；重新进入前台先验证会话。
 
@@ -45,8 +49,12 @@ TTS 使用设备的 Web Speech 音色，支持语速、暂停/恢复、前后段
 | 路径 | 行为 |
 | --- | --- |
 | `/api/v1/me` | 数据库中的默认读者及统一退出地址 |
+| `/api/v1/home` | 有上限的精选/高分/最近入库、3 条最近阅读与馆藏统计 |
+| `/api/v1/shelf?cursor=...&limit=24` | 当前读者的收藏与相关进度；按收藏时间和 ID 分页 |
+| `/api/v1/reading?cursor=...&limit=24` | 当前读者的阅读记录，独立于收藏；按最近阅读时间和 ID 分页 |
+| `/api/v1/books/:id/shelf` | PUT 加入、DELETE 移出；JSON 请求体 `{}`，可安全重试 |
 | `/api/v1/books?after=0&limit=24` | 首批分页书目；暂未实现完整检索/筛选 |
-| `/api/v1/books/:id` | 已审核书目的基本详情 |
+| `/api/v1/books/:id` | 已审核书目的基本详情、收藏状态及进度 |
 | `/api/v1/books/:id/chapters?after=0&limit=100` | 当前内容版本的目录窗口 |
 | `/api/v1/books/:id/chapters/:idx/content` | 有界正文块及签名续读游标 |
 | `/api/v1/books/:id/reader?chapter=N` | 聚合首次正文、服务端进度、书架状态与邻章；显式章号优先 |
@@ -69,9 +77,11 @@ go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
 `deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及三个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
 
-CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的 27 项基础检查、18 项进度检查和重启后的 3 项恢复检查。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`，以及 `node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json`，重启后加 `--resume .local/progress-smoke.json` 验证持久进度与回执。
+CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的基础、进度、首页/书架和重启恢复。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`、`node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json` 和 `node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --out .local/shelf-smoke.json`。M2/M3 脚本在重启后分别加 `--resume` 和对应报告路径，验证持久进度/回执与收藏。只对独立合成库运行写入检查。
 
 本地浏览器测试可启动 `node tools/m2/browser-gateway.mjs`，访问 `http://127.0.0.1:16872`。该回环测试网关使用合成会话和可控 503/401，只用于故障回归，不是 Authelia，也不用于生产部署。`tools/m2/measure-progress.mjs` 可与 M0 读取测量脚本同时运行，记录同步写入延迟。
+
+M3 首批可用 `node tools/m3/measure.mjs --base http://127.0.0.1:16871 --container personal-library-m3 --fixture .local/m0/fixture-summary.json --seconds 30 --out .local/reports/m3-mixed-read.json` 做 5 路混合读取短测。每轮各请求一次首页、书架、最近阅读、详情和正文；报告记录延迟、响应字节及容器内存。它不包含封面/导入任务、写入或门户开销，不代替 M4 完整性能验收。
 
 ## 业务库与旧库迁移
 
