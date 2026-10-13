@@ -10,6 +10,30 @@ import (
 	"database/sql"
 )
 
+const addToShelf = `-- name: AddToShelf :exec
+INSERT INTO shelf_entries(id,reader_id,book_id,added_at,updated_at) VALUES(?,?,?,?,?)
+ON CONFLICT(reader_id,book_id) DO NOTHING
+`
+
+type AddToShelfParams struct {
+	ID        string
+	ReaderID  string
+	BookID    int64
+	AddedAt   int64
+	UpdatedAt int64
+}
+
+func (q *Queries) AddToShelf(ctx context.Context, arg AddToShelfParams) error {
+	_, err := q.db.ExecContext(ctx, addToShelf,
+		arg.ID,
+		arg.ReaderID,
+		arg.BookID,
+		arg.AddedAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const bookDetail = `-- name: BookDetail :one
 SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score, b.intro
@@ -89,6 +113,26 @@ func (q *Queries) ChapterWindow(ctx context.Context, arg ChapterWindowParams) ([
 	return items, nil
 }
 
+const collectionCounts = `-- name: CollectionCounts :one
+SELECT
+  (SELECT count(*) FROM shelf_entries s JOIN books b ON b.id=s.book_id
+   WHERE s.reader_id=?1 AND b.status='APPROVED') AS shelf,
+  (SELECT count(*) FROM reading_progress p JOIN books b ON b.id=p.book_id
+   WHERE p.reader_id=?1 AND b.status='APPROVED') AS reading
+`
+
+type CollectionCountsRow struct {
+	Shelf   int64
+	Reading int64
+}
+
+func (q *Queries) CollectionCounts(ctx context.Context, readerID string) (CollectionCountsRow, error) {
+	row := q.db.QueryRowContext(ctx, collectionCounts, readerID)
+	var i CollectionCountsRow
+	err := row.Scan(&i.Shelf, &i.Reading)
+	return i, err
+}
+
 const currentReader = `-- name: CurrentReader :one
 SELECT id, username, nickname FROM readers WHERE portal_user = ?
 `
@@ -106,6 +150,142 @@ func (q *Queries) CurrentReader(ctx context.Context, portalUser sql.NullString) 
 	return i, err
 }
 
+const featuredCandidates = `-- name: FeaturedCandidates :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score, r.xiancao_count, substr(b.intro,1,180) AS intro
+FROM rating_snapshots r JOIN books b ON b.id=r.book_id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY r.xiancao_count DESC, r.score DESC, b.id DESC LIMIT 30
+`
+
+type FeaturedCandidatesRow struct {
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+	XiancaoCount int64
+	Intro        string
+}
+
+func (q *Queries) FeaturedCandidates(ctx context.Context) ([]FeaturedCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, featuredCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeaturedCandidatesRow{}
+	for rows.Next() {
+		var i FeaturedCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+			&i.XiancaoCount,
+			&i.Intro,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const highRatedBooks = `-- name: HighRatedBooks :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score
+FROM rating_snapshots r JOIN books b ON b.id=r.book_id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY r.score DESC, b.id DESC LIMIT 6
+`
+
+type HighRatedBooksRow struct {
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+}
+
+func (q *Queries) HighRatedBooks(ctx context.Context) ([]HighRatedBooksRow, error) {
+	rows, err := q.db.QueryContext(ctx, highRatedBooks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HighRatedBooksRow{}
+	for rows.Next() {
+		var i HighRatedBooksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const homeStats = `-- name: HomeStats :one
+SELECT count(*) AS books, count(DISTINCT author) AS authors,
+       count(DISTINCT nullif(tag1,'')) AS categories,
+       CAST(coalesce(sum(has_content),0) AS INTEGER) AS readable
+FROM books WHERE status='APPROVED'
+`
+
+type HomeStatsRow struct {
+	Books      int64
+	Authors    int64
+	Categories int64
+	Readable   int64
+}
+
+func (q *Queries) HomeStats(ctx context.Context) (HomeStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, homeStats)
+	var i HomeStatsRow
+	err := row.Scan(
+		&i.Books,
+		&i.Authors,
+		&i.Categories,
+		&i.Readable,
+	)
+	return i, err
+}
+
 const inShelf = `-- name: InShelf :one
 SELECT EXISTS(SELECT 1 FROM shelf_entries WHERE reader_id=? AND book_id=?) AS in_shelf
 `
@@ -120,6 +300,59 @@ func (q *Queries) InShelf(ctx context.Context, arg InShelfParams) (int64, error)
 	var in_shelf int64
 	err := row.Scan(&in_shelf)
 	return in_shelf, err
+}
+
+const latestBooks = `-- name: LatestBooks :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score
+FROM books b JOIN rating_snapshots r ON r.book_id=b.id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY b.created_at DESC, b.id DESC LIMIT 6
+`
+
+type LatestBooksRow struct {
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+}
+
+func (q *Queries) LatestBooks(ctx context.Context) ([]LatestBooksRow, error) {
+	rows, err := q.db.QueryContext(ctx, latestBooks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LatestBooksRow{}
+	for rows.Next() {
+		var i LatestBooksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBooks = `-- name: ListBooks :many
@@ -395,6 +628,101 @@ func (q *Queries) ReadingProgress(ctx context.Context, arg ReadingProgressParams
 	return i, err
 }
 
+const readingWindow = `-- name: ReadingWindow :many
+SELECT p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
+       b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count, b.has_content, r.score,
+       CAST(EXISTS(SELECT 1 FROM shelf_entries s WHERE s.book_id=b.id AND s.reader_id=p.reader_id) AS INTEGER) AS in_shelf
+FROM reading_progress p JOIN books b ON b.id=p.book_id
+JOIN rating_snapshots r ON r.book_id=b.id
+WHERE p.reader_id=?1 AND b.status='APPROVED'
+  AND (?2=0 OR p.updated_at<?3
+       OR (p.updated_at=?3 AND p.id>?4))
+ORDER BY p.updated_at DESC, p.id ASC LIMIT ?5
+`
+
+type ReadingWindowParams struct {
+	ReaderID  string
+	HasCursor interface{}
+	AfterTime int64
+	AfterID   string
+	PageLimit int64
+}
+
+type ReadingWindowRow struct {
+	EntryID      string
+	UpdatedAt    int64
+	ChapterIdx   int64
+	Percent      float64
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+	InShelf      int64
+}
+
+func (q *Queries) ReadingWindow(ctx context.Context, arg ReadingWindowParams) ([]ReadingWindowRow, error) {
+	rows, err := q.db.QueryContext(ctx, readingWindow,
+		arg.ReaderID,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReadingWindowRow{}
+	for rows.Next() {
+		var i ReadingWindowRow
+		if err := rows.Scan(
+			&i.EntryID,
+			&i.UpdatedAt,
+			&i.ChapterIdx,
+			&i.Percent,
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+			&i.InShelf,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeFromShelf = `-- name: RemoveFromShelf :exec
+DELETE FROM shelf_entries WHERE reader_id=? AND book_id=?
+`
+
+type RemoveFromShelfParams struct {
+	ReaderID string
+	BookID   int64
+}
+
+func (q *Queries) RemoveFromShelf(ctx context.Context, arg RemoveFromShelfParams) error {
+	_, err := q.db.ExecContext(ctx, removeFromShelf, arg.ReaderID, arg.BookID)
+	return err
+}
+
 const saveProgress = `-- name: SaveProgress :exec
 INSERT INTO reading_progress(id,reader_id,book_id,chapter_idx,percent,updated_at,content_version,anchor,revision)
 VALUES(?,?,?,?,?,?,?,?,?)
@@ -512,6 +840,92 @@ func (q *Queries) SearchChapters(ctx context.Context, arg SearchChaptersParams) 
 	for rows.Next() {
 		var i SearchChaptersRow
 		if err := rows.Scan(&i.Idx, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const shelfWindow = `-- name: ShelfWindow :many
+SELECT s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
+       b.word_count, b.chapter_count, b.has_content, r.score,
+       CAST(coalesce(p.chapter_idx,0) AS INTEGER) AS progress_chapter,
+       CAST(coalesce(p.percent,0) AS REAL) AS progress_percent,
+       CAST(coalesce(p.updated_at,0) AS INTEGER) AS progress_at
+FROM shelf_entries s JOIN books b ON b.id=s.book_id
+JOIN rating_snapshots r ON r.book_id=b.id
+LEFT JOIN reading_progress p ON p.book_id=b.id AND p.reader_id=s.reader_id
+WHERE s.reader_id=?1 AND b.status='APPROVED'
+  AND (?2=0 OR s.added_at<?3
+       OR (s.added_at=?3 AND s.id>?4))
+ORDER BY s.added_at DESC, s.id ASC LIMIT ?5
+`
+
+type ShelfWindowParams struct {
+	ReaderID  string
+	HasCursor interface{}
+	AfterTime int64
+	AfterID   string
+	PageLimit int64
+}
+
+type ShelfWindowRow struct {
+	EntryID         string
+	AddedAt         int64
+	ID              int64
+	Title           string
+	Author          string
+	Tag1            string
+	Tag2            string
+	WordCount       int64
+	ChapterCount    int64
+	HasContent      int64
+	Score           float64
+	ProgressChapter int64
+	ProgressPercent float64
+	ProgressAt      int64
+}
+
+// The timestamp and immutable entry ID together form the ordering key. Repeated
+// adds retain both; inserting or deleting another entry does not shift a page.
+func (q *Queries) ShelfWindow(ctx context.Context, arg ShelfWindowParams) ([]ShelfWindowRow, error) {
+	rows, err := q.db.QueryContext(ctx, shelfWindow,
+		arg.ReaderID,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ShelfWindowRow{}
+	for rows.Next() {
+		var i ShelfWindowRow
+		if err := rows.Scan(
+			&i.EntryID,
+			&i.AddedAt,
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+			&i.ProgressChapter,
+			&i.ProgressPercent,
+			&i.ProgressAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

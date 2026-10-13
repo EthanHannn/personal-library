@@ -79,3 +79,71 @@ INSERT INTO progress_mutations(reader_id,book_id,mutation_id,request_hash,revisi
 
 -- name: PruneReceipts :exec
 DELETE FROM progress_mutations WHERE reader_id=? AND book_id=? AND revision<=?;
+
+-- name: AddToShelf :exec
+INSERT INTO shelf_entries(id,reader_id,book_id,added_at,updated_at) VALUES(?,?,?,?,?)
+ON CONFLICT(reader_id,book_id) DO NOTHING;
+
+-- name: RemoveFromShelf :exec
+DELETE FROM shelf_entries WHERE reader_id=? AND book_id=?;
+
+-- name: CollectionCounts :one
+SELECT
+  (SELECT count(*) FROM shelf_entries s JOIN books b ON b.id=s.book_id
+   WHERE s.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED') AS shelf,
+  (SELECT count(*) FROM reading_progress p JOIN books b ON b.id=p.book_id
+   WHERE p.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED') AS reading;
+
+-- The timestamp and immutable entry ID together form the ordering key. Repeated
+-- adds retain both; inserting or deleting another entry does not shift a page.
+-- name: ShelfWindow :many
+SELECT s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
+       b.word_count, b.chapter_count, b.has_content, r.score,
+       CAST(coalesce(p.chapter_idx,0) AS INTEGER) AS progress_chapter,
+       CAST(coalesce(p.percent,0) AS REAL) AS progress_percent,
+       CAST(coalesce(p.updated_at,0) AS INTEGER) AS progress_at
+FROM shelf_entries s JOIN books b ON b.id=s.book_id
+JOIN rating_snapshots r ON r.book_id=b.id
+LEFT JOIN reading_progress p ON p.book_id=b.id AND p.reader_id=s.reader_id
+WHERE s.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED'
+  AND (sqlc.arg(has_cursor)=0 OR s.added_at<sqlc.arg(after_time)
+       OR (s.added_at=sqlc.arg(after_time) AND s.id>sqlc.arg(after_id)))
+ORDER BY s.added_at DESC, s.id ASC LIMIT sqlc.arg(page_limit);
+
+-- name: ReadingWindow :many
+SELECT p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
+       b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count, b.has_content, r.score,
+       CAST(EXISTS(SELECT 1 FROM shelf_entries s WHERE s.book_id=b.id AND s.reader_id=p.reader_id) AS INTEGER) AS in_shelf
+FROM reading_progress p JOIN books b ON b.id=p.book_id
+JOIN rating_snapshots r ON r.book_id=b.id
+WHERE p.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED'
+  AND (sqlc.arg(has_cursor)=0 OR p.updated_at<sqlc.arg(after_time)
+       OR (p.updated_at=sqlc.arg(after_time) AND p.id>sqlc.arg(after_id)))
+ORDER BY p.updated_at DESC, p.id ASC LIMIT sqlc.arg(page_limit);
+
+-- name: HomeStats :one
+SELECT count(*) AS books, count(DISTINCT author) AS authors,
+       count(DISTINCT nullif(tag1,'')) AS categories,
+       CAST(coalesce(sum(has_content),0) AS INTEGER) AS readable
+FROM books WHERE status='APPROVED';
+
+-- name: FeaturedCandidates :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score, r.xiancao_count, substr(b.intro,1,180) AS intro
+FROM rating_snapshots r JOIN books b ON b.id=r.book_id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY r.xiancao_count DESC, r.score DESC, b.id DESC LIMIT 30;
+
+-- name: HighRatedBooks :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score
+FROM rating_snapshots r JOIN books b ON b.id=r.book_id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY r.score DESC, b.id DESC LIMIT 6;
+
+-- name: LatestBooks :many
+SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+       b.has_content, r.score
+FROM books b JOIN rating_snapshots r ON r.book_id=b.id
+WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
+ORDER BY b.created_at DESC, b.id DESC LIMIT 6;

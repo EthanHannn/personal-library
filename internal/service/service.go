@@ -56,6 +56,12 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 	}
 	mux := http.NewServeMux()
 	reading := readingAPI{store: store, content: api, readerID: user.ID}
+	collections := collectionAPI{store: store, readerID: user.ID}
+	mux.HandleFunc("GET /api/v1/home", collections.home)
+	mux.HandleFunc("GET /api/v1/shelf", collections.list("shelf"))
+	mux.HandleFunc("GET /api/v1/reading", collections.list("reading"))
+	mux.HandleFunc("PUT /api/v1/books/{id}/shelf", collections.setShelf)
+	mux.HandleFunc("DELETE /api/v1/books/{id}/shelf", collections.setShelf)
 	mux.HandleFunc("GET /api/v1/books/{id}/reader", reading.initialize)
 	mux.HandleFunc("GET /api/v1/books/{id}/directory", reading.directory)
 	mux.HandleFunc("GET /api/v1/books/{id}/progress", reading.progress)
@@ -111,7 +117,17 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 			apiError(w, err)
 			return
 		}
-		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}})
+		inShelf, err := store.Queries.InShelf(r.Context(), dbgen.InShelfParams{ReaderID: user.ID, BookID: id})
+		if err != nil {
+			apiError(w, err)
+			return
+		}
+		progress, err := store.Progress(r.Context(), user.ID, id)
+		if err != nil {
+			apiError(w, err)
+			return
+		}
+		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, "inShelf": inShelf != 0, "progress": progress})
 	})
 	mux.Handle("/", static)
 	return api.Handler(config, mux, "library"), nil
