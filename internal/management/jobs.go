@@ -32,11 +32,16 @@ type Metadata struct {
 }
 type Input struct {
 	Metadata
-	Path        string `json:"path,omitempty"`
-	Encoding    string `json:"encoding,omitempty"`
-	BookID      int64  `json:"bookId,omitempty"`
-	URL         string `json:"url,omitempty"`
-	MaxChapters int    `json:"maxChapters,omitempty"`
+	Path            string           `json:"path,omitempty"`
+	Encoding        string           `json:"encoding,omitempty"`
+	BookID          int64            `json:"bookId,omitempty"`
+	URL             string           `json:"url,omitempty"`
+	MaxChapters     int              `json:"maxChapters,omitempty"`
+	SourceID        string           `json:"sourceId,omitempty"`
+	SourceVersion   int              `json:"sourceVersion,omitempty"`
+	SourceIDs       []string         `json:"sourceIds,omitempty"`
+	SourceSnapshots []SourceSnapshot `json:"sourceSnapshots,omitempty"`
+	Query           string           `json:"query,omitempty"`
 }
 type Job struct {
 	ID        string          `json:"id"`
@@ -99,6 +104,7 @@ func ValidMetadata(b Metadata) bool {
 	return strings.TrimSpace(b.Title) != "" && len([]rune(b.Title)) <= 200 && len([]rune(b.Author)) <= 200 && len([]rune(b.Tag1)) <= 100 && len([]rune(b.Tag2)) <= 100 && len(b.Intro) <= 12000 && !strings.ContainsAny(b.Title+b.Author+b.Tag1+b.Tag2, "\x00\r\n") && !strings.ContainsRune(b.Intro, 0)
 }
 func (m *Manager) Enqueue(ctx context.Context, kind string, in Input) (Job, error) {
+	in.SourceSnapshots = nil
 	switch kind {
 	case "import":
 		if !ValidMetadata(in.Metadata) || (in.Encoding != "utf-8" && in.Encoding != "gb18030") || !strings.EqualFold(filepath.Ext(in.Path), ".txt") {
@@ -108,11 +114,15 @@ func (m *Manager) Enqueue(ctx context.Context, kind string, in Input) (Job, erro
 			return Job{}, fmt.Errorf("无法读取小说目录内的 TXT 文件")
 		}
 	case "collect":
-		if _, err := qidianID(in.URL); err != nil {
+		if err := m.bindSources(ctx, kind, &in); err != nil {
 			return Job{}, err
 		}
 		if in.MaxChapters < 1 || in.MaxChapters > 2000 {
 			return Job{}, fmt.Errorf("每次采集 1–2000 章")
+		}
+	case "search", "source-check":
+		if err := m.bindSources(ctx, kind, &in); err != nil {
+			return Job{}, err
 		}
 	case "cover":
 		if in.BookID < 1 {
@@ -292,6 +302,10 @@ func (m *Manager) RunOne(ctx context.Context) {
 			result, err = m.cover(ctx, j)
 		case "scan":
 			result, err = m.scan(ctx)
+		case "search":
+			result, err = m.searchSources(ctx, j)
+		case "source-check":
+			result, err = m.checkSource(ctx, j)
 		}
 	}
 	if ctx.Err() != nil {

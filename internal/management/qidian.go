@@ -64,7 +64,7 @@ func writeAtomic(root *os.Root, name string, data []byte) error {
 	}
 	return root.Rename(name+".tmp", name)
 }
-func (m *Manager) collect(ctx context.Context, j Job) (Preview, error) {
+func (m *Manager) collectQidian(ctx context.Context, j Job) (Preview, error) {
 	var p Preview
 	id, err := qidianID(j.Input.URL)
 	if err != nil {

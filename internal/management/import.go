@@ -34,6 +34,10 @@ type Source struct {
 	Total       int    `json:"total"`
 	Downloaded  int    `json:"downloaded"`
 	SkippedPaid int    `json:"skippedPaid"`
+	RuleVersion int    `json:"ruleVersion,omitempty"`
+	CollectedAt int64  `json:"collectedAt,omitempty"`
+	Label       string `json:"label,omitempty"`
+	WorkStatus  string `json:"workStatus,omitempty"`
 }
 type Preview struct {
 	Metadata
@@ -234,7 +238,7 @@ func (m *Manager) confirm(ctx context.Context, j Job) (Preview, error) {
 		return p, err
 	}
 	if p.Source != nil {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO book_sources VALUES(?,?,?,?,?)`, p.BookID, p.Source.Name, p.Source.ID, p.Source.URL, p.Source.Complete); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO book_sources(book_id,source,source_id,source_url,complete,rule_version,collected_at) VALUES(?,?,?,?,?,?,?)`, p.BookID, p.Source.Name, p.Source.ID, p.Source.URL, p.Source.Complete, p.Source.RuleVersion, p.Source.CollectedAt); err != nil {
 			return p, ErrConflict
 		}
 	}

@@ -159,3 +159,60 @@ INSERT INTO reading_progress VALUES('original-id','r',1,1,0.71,789,NULL,NULL,0);
 		t.Fatal("missing history accepted")
 	}
 }
+
+func TestUpgradeV3PreservesJobsAndSupportsMultipleSources(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v3.db")
+	db, err := Connect(ctx, path, "rwc", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL) STRICT`); err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 3; version++ {
+		raw, checksum, e := migration(version)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = db.Exec(string(raw)); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = db.Exec(`INSERT INTO schema_migrations VALUES(?,?,0)`, version, checksum); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, err = db.Exec(`INSERT INTO books VALUES(1,'书','作者','','','','','APPROVED',NULL,NULL,NULL,1,1,1,0,0);
+INSERT INTO book_sources VALUES(1,'qidian','123','https://www.qidian.com/book/123/',0);
+INSERT INTO library_jobs(id,kind,dedupe,status,payload,message,created_at,updated_at) VALUES('old','collect','hash','queued','{}','confirm',1,1);
+INSERT INTO job_chapters VALUES('old',1,'第一章',0,100);`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err = Migrate(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	var message, title string
+	if err = upgraded.Read.QueryRow(`SELECT message,title FROM library_jobs JOIN job_chapters ON job_id=id WHERE id='old'`).Scan(&message, &title); err != nil || message != "confirm" || title != "第一章" {
+		t.Fatal(message, title, err)
+	}
+	if _, err = upgraded.Write.Exec(`INSERT INTO book_sources(book_id,source,source_id,source_url,complete) VALUES(1,'another','456','https://example.com/book',1)`); err != nil {
+		t.Fatal("second source", err)
+	}
+	if _, err = upgraded.Write.Exec(`INSERT INTO job_chapters VALUES('missing',1,'坏外键',0,100)`); err == nil {
+		t.Fatal("lost job foreign key")
+	}
+	rows, err := upgraded.Read.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("broken foreign keys")
+	}
+}

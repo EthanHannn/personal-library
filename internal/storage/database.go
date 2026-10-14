@@ -20,9 +20,9 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-const Version = 3
+const Version = 4
 
-var migrationFiles = []string{"001_library.sql", "002_reading.sql", "003_management.sql"}
+var migrationFiles = []string{"001_library.sql", "002_reading.sql", "003_management.sql", "004_sources.sql"}
 
 type Database struct {
 	Read  *sql.DB
