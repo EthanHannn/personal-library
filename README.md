@@ -1,5 +1,9 @@
 # personal-library
 
+首次从旧版生产书屋切换时，使用 `deploy/release.py` 的专用发布流程：安装 `deploy/install_release_command.py` 到现有 ECS 运维入口，用 `deploy/package_release.py --out <新目录> --evidence <已通过的 preparation.json> --image <当前提交镜像>` 生成私有发布包，再调用 `deploy-personal-library <发布包>`。入口将任务交给 systemd，SSH 断开不会终止迁移。发布包和数据证据只放 `.local/`，不进 Git。
+
+该流程只支持首次旧库迁移：暂停书屋访问，保留旧容器和最终一致性备份，重新校验原 TXT 指纹并采用服务器实际时间戳，全量导入对账，然后验证阅读/个人关系/真实封面、备份恢复和重启。成功后开放原域名与端口，门户及其他网站保持服务。公开写入前失败会恢复旧上游；开放写入后禁止自动回滚旧库。后续版本更新不能再次执行首次迁移入口。具体生产状态和恢复路径记录在 Obsidian。
+
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
 M0–M2 阅读主链及 M3 首页/书架、检索、本人投票、本地推荐、个人中心、书库管理、TXT 导入和真实封面任务已实现。起点采集支持公开免费章节的预览入库与断点恢复；实际访问仍可能被站点验证阻止。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务，真实数据本机迁移已通过对账，生产替换尚未完成。评论/回复、失效原站入口和个人数据导出不在当前范围内。
