@@ -2,7 +2,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0–M2 阅读主链及 M3 首页/书架、检索、本人投票、本地推荐、个人中心、书库管理、TXT 导入和真实封面任务已实现。起点采集支持公开免费章节的预览入库与断点恢复；实际访问仍可能被站点验证阻止。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务，真实迁移与生产替换尚未完成。评论/回复、失效原站入口和个人数据导出不在当前范围内。
+M0–M2 阅读主链及 M3 首页/书架、检索、本人投票、本地推荐、个人中心、书库管理、TXT 导入和真实封面任务已实现。起点采集支持公开免费章节的预览入库与断点恢复；实际访问仍可能被站点验证阻止。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务，真实数据本机迁移已通过对账，生产替换尚未完成。评论/回复、失效原站入口和个人数据导出不在当前范围内。
 
 ## 开发
 
@@ -18,7 +18,7 @@ npm --prefix web run build
 go test -tags release ./...
 ```
 
-阅读内核通过 `os.Root` 将文件访问限制在书库内，用 `ReadAt` 读取有上限的字节范围。支持 UTF-8、UTF-8 BOM 和 GB18030，正文块最多 256 KiB UTF-8；续读位置保留原始文件字节偏移。编码由调用方提供，读取时不猜测或转写原文件。
+阅读内核通过 `os.Root` 将文件访问限制在书库内，用 `ReadAt` 读取有上限的字节范围。支持 UTF-8、UTF-8 BOM、GB18030 和 UTF-16 LE/BE，正文块最多 256 KiB UTF-8；续读位置保留原始文件字节偏移。编码由调用方提供，读取时不猜测或转写原文件。UTF-16 用于兼容真实旧书库，迁移按 BOM 和全文验证确定编码；沿用原目录，旧版整本一章的记录不在迁移时自动拆章。管理页新增 TXT 的结构化索引目前仍接受 UTF-8/GB18030。
 
 GB18030 解码与旧版镜像的 `TextDecoder` 对齐（Node 20.20.2 / ICU 78.2），补齐 Go 解码库缺少的私用区和新版标点映射。测试包含 63,360 组双字节/BMP 四字节序列的独立参考哈希、补充平面字符、分块与随机输入。`tools/m0/encoding-reference.mjs` 可在旧版运行时重新生成参考；更改解码规则时须更新内容版本。
 
@@ -34,7 +34,7 @@ go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels -
 
 默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
 
-当前 schema 为 v4，升级前先备份业务库并显式执行 `library migrate --db <数据库>`。`/profile` 汇总个人记录和本机阅读设置；`/manage` 提供书目审核/修正、TXT 预览与确认、目录检查、多书源搜索与公开章节采集、单本及批量封面补全。导入只新增作品或补充缺失正文，不覆盖已有正文；来源评分与个人关系保留。规则推荐只使用已有作者/分类等元数据，候选不足时不展示。
+当前 schema 为 v5，升级前先备份业务库并显式执行 `library migrate --db <数据库>`。`/profile` 汇总个人记录和本机阅读设置；`/manage` 提供书目审核/修正、TXT 预览与确认、目录检查、多书源搜索与公开章节采集、单本及批量封面补全。导入只新增作品或补充缺失正文，不覆盖已有正文；来源评分与个人关系保留。规则推荐只使用已有作者/分类等元数据，候选不足时不展示。
 
 `--covers` 和 `--collected` 默认分别为数据库同级的 `covers/`、`collected/`，随可写数据目录持久化。旧封面复制到新封面根目录，保留 `real/` 等子目录。采集内容通过保留路径前缀 `_collected/` 读取，原小说根目录不能占用该名称。单 worker 顺序处理持久任务，可取消、重试及恢复；默认网络请求间隔为 5 秒，自定义书源可配置 1–60 秒，验证页和 403/429 会触发 6 小时来源冷却。起点付费章不采集，部分正文会明确标记；浏览器采集工具生成的 TXT 可经同一导入流程处理。取消任务保留暂存文件，暂不自动清理。
 
@@ -116,15 +116,44 @@ go run ./cmd/library migrate --db .local/m1/library.db
 go run ./cmd/library import-legacy --source .local/m0/library.db --db .local/m1/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json --portal-user owner --source-version synthetic-m0-96abf8d
 ```
 
-目标目录须先存在。`migrate` 显式创建或升级 schema，当前为 v4；升级保留既有阅读记录、采集任务与迁移校验值。升级前应备份业务库和 collected/covers 目录，使用新版本显式运行 migrate 后再启动服务。它拒绝旧版 Prisma 数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
+目标目录须先存在。`migrate` 显式创建或升级 schema，当前为 v5；升级保留既有阅读记录、采集任务与迁移校验值。升级前应备份业务库和 collected/covers 目录，使用新版本显式运行 migrate 后再启动服务。它拒绝旧版 Prisma 数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
 
 导入默认每 5,000 行提交一次；`--batch-size` 最大 10,000，`--batch-pause 10ms` 可限速，`--max-batches N` 可主动停在检查点。相同命令继续执行会校验输入指纹后续传；源快照、正文、编码清单、门户用户或来源版本变化时拒绝继续。导入必须离线独占目标库。源数据异常不会静默删行或修正，修正输入后使用另一份新目标库重新演练。
 
 书目、章节、历史读者、书架、进度、投票和评论保留原 ID；默认读者映射到指定门户用户，其他读者保留历史归属，不创建密码或登录入口。章节标题/偏移保持原值，原路径另行保留；同文件允许关联多本书。时间统一为 UTC 毫秒，支持 Prisma 毫秒整数、UTC SQL 时间和带时区 ISO 时间。未识别时间直接失败。
 
+旧库中未上传正文的作品也可能有完整目录。schema v5 将这些目录保留在不启用的内容版本中，文件引用为空，书目仍为无正文；不虚构文件，也不丢掉章节。其编号、数量、相邻偏移和个人记录仍参与对账，文件大小上限只对可读作品验证，报告分别统计 `unavailableBooks` / `unavailableChapters`。以后确认补齐缺失正文时发布新版本，旧目录继续保留；这不代表已实现可读正文换源或自动进度映射。
+
 历史评分与票数存入 `rating_snapshots`，已导入个人票同时保存 `imported_type` 基准，后续改票须按差量更新，不能再次累加全部个人票。回复分两步迁移，并检查缺失父评论、跨作品回复和循环关系。
 
 标准输出为 JSON 报告：11 类实体的行数/规范化逐字段 SHA-256、全部源文件 SHA-256、源库全章节校验和目标库 `integrity_check`。检查失败或中断的目标不会被服务接受。清单只提供已确认的编码；此阶段不自动识别编码、不迁移浏览器尚未同步的进度、不复制或验证封面图片。真实全量解码、封面与浏览器状态验收继续按 M4 清单执行。
+
+### 真实数据演练与恢复工具
+
+`tools/m4/capture_legacy.py` 使用 SQLite 在线备份，生成包含旧库、封面、TXT 指纹的私有归档，正文不随归档下载。固定生产入口只读取既定旧书屋路径，临时副本退出时清理；不停止服务，不读取门户凭据。`install_snapshot_command.py <aliyun-ecs-ops.sh>` 可将该入口加入现有运维脚本的专用 `library-snapshot <本地新.tar.gz>` 命令，已有命令时拒绝覆盖。先审阅运维入口，且不要修改正在运行的脚本。
+
+准备工具使用 Python 3.12+ 标准库，对照线上 SHA-256 复制本机相同 TXT 到独立演练目录，验证全文 UTF-8/GB18030/UTF-16 编码与所有封面，记录多书共用文件的关系。GB18030 校验兼容浏览器的单字节 `0x80` 欧元；其他错误仍拒绝。原文件不转码。新目录和报告必须放在 Git 忽略的 `.local/`；输出目录须不存在：
+
+```sh
+python tools/m4/prepare_legacy.py --archive .local/legacy-snapshot.tar.gz --local-novels <本机原TXT目录> --out .local/rehearsal
+```
+
+输出为 `snapshot/`（旧库与封面）和 `prepared/`（正文、manifest、准备报告）。只有全部指纹与编码验证通过才生成 manifest。可选 `--supplement <指纹.json>` 用于已有归档遗漏文件时追加只读采集的指纹，重复路径拒绝，来源写入报告；新快照已包含大小写 TXT 扩展名。将 `snapshot/library.db` 与 `prepared/` 交给上方迁移命令，并把 `snapshot/covers` 复制到候选数据目录。容器/其他平台运行前须核对 manifest 的纳秒修改时间与实际只读挂载一致，时间值不能凭空改写。
+
+新版隔离服务启动后，以下 Node.js 24 检查遍历每部可读作品的首、中、末章和所有正文块，与 WHATWG 解码及原字节偏移比对，再检查全部历史位图封面的 HTTP 返回和 SHA-256。UTF-8/GB18030 沿用旧版编码判断；旧版误判为 GB18030 的 BOM UTF-16 文件按正确编码比较，并逐书记录差异。报告不保存正文，只允许回环地址，使用合成可信身份 `owner`；门户认证另用上文真实网关联调验收。
+
+```sh
+node tools/m4/verify_content.mjs --db .local/rehearsal/snapshot/library.db --novels .local/rehearsal/prepared/novels --manifest .local/rehearsal/prepared/manifest.json --covers .local/rehearsal/snapshot/covers --base http://127.0.0.1:16871 --out .local/rehearsal/content-check.json
+node tools/m4/verify_personal.mjs --db .local/rehearsal/snapshot/library.db --base http://127.0.0.1:16871 --out .local/rehearsal/personal-check.json
+python tools/m4/backup_restore.py backup --source .local/rehearsal/candidate --out .local/rehearsal/backup
+python tools/m4/backup_restore.py restore --source .local/rehearsal/backup --out .local/rehearsal/restored
+```
+
+备份源目录包含 `library.db`、`covers/` 和 `collected/`。SQLite 备份包含已提交的 WAL；封面与采集文件另按 SHA-256 验证，备份时须停止内容任务，避免跨数据库/文件的并发变化。恢复先检查所有指纹，再写入全新目录并复核数据库完整性、外键和全部表计数，绝不覆盖现有库。原始只读 TXT 不重复装入备份，必须保留其独立副本和指纹。恢复后用同一正文挂载启动服务，回读个人记录和正文，重启后再次核对。
+
+`verify_personal.mjs` 只读核对默认读者的收藏、进度、本人票和历史读者隔离，再读取一部作品与封面。恢复/重启后重新运行并加 `--baseline <上次personal-check.json>`，要求个人状态及正文/封面摘要一致。缺少的本机正文可先通过运维只读下载到独立目录，再用准备工具的 `--extra-novels <目录>` 补齐，仍须匹配快照指纹。
+
+这些工具验证新版库的备份恢复，不包含切换后新增写入向旧 Prisma 格式的逆向迁移。生产切换仍须最终停写快照、重新对账、资源与权限检查。
 
 ## M0 只读原型
 
