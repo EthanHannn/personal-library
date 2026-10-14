@@ -57,6 +57,8 @@ def verify_bundle(stage):
         raise ValueError("Invalid release identity")
     if not re.fullmatch("sha256:[0-9a-f]{64}", package.get("imageId", "")):
         raise ValueError("Invalid image identity")
+    if not re.fullmatch("sha256:[0-9a-f]{64}", package.get("configId", "")) or package.get("imageRef") != "personal-library:release-" + package["revision"][:12]:
+        raise ValueError("Invalid portable image identity")
     files = package["files"]
     if set(files) != {p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file()} - {"package.json"}:
         raise ValueError("Package has missing or unexpected files")
@@ -235,7 +237,12 @@ def deploy(stage):
     state["oldRevision"] = output("docker", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', OLD)
     write_json(reports / "release.json", state)
     run("docker", "load", "--input", release / "image.tar")
-    image = package["imageId"]
+    image = output("docker", "image", "inspect", "--format", "{{.Id}}", package["imageRef"])
+    # Docker's classic store exposes the config digest; containerd exposes the
+    # OCI manifest/index digest. Both must come from this exact checked archive.
+    if image not in (package["imageId"], package["configId"]):
+        raise ValueError("Loaded image identity differs from the packaged image")
+    state["imageId"] = image
     if output("docker", "image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image) != package["revision"]:
         raise ValueError("Image revision does not match the verified release")
     data = ROOT / "data"

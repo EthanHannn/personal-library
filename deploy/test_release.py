@@ -31,7 +31,9 @@ class ReleaseTests(unittest.TestCase):
             asset = root / "image.tar"
             asset.write_bytes(b"verified-image")
             manifest = {"format": "personal-library/release@1", "revision": "a" * 40,
-                        "imageId": "sha256:" + "b" * 64, "files": {"image.tar": hashlib.sha256(asset.read_bytes()).hexdigest()}}
+                        "imageId": "sha256:" + "b" * 64, "configId": "sha256:" + "c" * 64,
+                        "imageRef": "personal-library:release-" + "a" * 12,
+                        "files": {"image.tar": hashlib.sha256(asset.read_bytes()).hexdigest()}}
             (root / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(release.verify_bundle(root), manifest)
             asset.write_bytes(b"changed-image")

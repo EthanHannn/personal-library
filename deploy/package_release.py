@@ -32,9 +32,17 @@ def package(root, output, evidence_path, image):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, target)
     (stage / "encoding-evidence.json").write_text(json.dumps({"complete": True, "files": evidence["files"]}, ensure_ascii=False), encoding="utf-8")
-    subprocess.run(["docker", "save", "--output", str(stage / "image.tar"), image], check=True)
+    image_ref = "personal-library:release-" + revision[:12]
+    subprocess.run(["docker", "tag", image, image_ref], check=True)
+    subprocess.run(["docker", "save", "--output", str(stage / "image.tar"), image_ref], check=True)
+    with tarfile.open(stage / "image.tar") as saved:
+        images = json.load(saved.extractfile("manifest.json"))
+        if len(images) != 1 or image_ref not in images[0]["RepoTags"]:
+            raise ValueError("Expected exactly one tagged release image")
+        config_id = "sha256:" + hashlib.sha256(saved.extractfile(images[0]["Config"]).read()).hexdigest()
     manifest = {"format": "personal-library/release@1", "revision": revision,
-                "imageId": command("docker", "image", "inspect", "--format", "{{.Id}}", image), "files": {}}
+                "imageId": command("docker", "image", "inspect", "--format", "{{.Id}}", image),
+                "configId": config_id, "imageRef": image_ref, "files": {}}
     for path in sorted(stage.rglob("*")):
         if path.is_file():
             with path.open("rb") as stream:
