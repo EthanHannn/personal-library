@@ -7,6 +7,7 @@ import RequestStatus from '../RequestStatus.vue'
 import ShelfButton from '../library/ShelfButton.vue'
 import ReadingPosition from '../library/ReadingPosition.vue'
 import BookVote from './BookVote.vue'
+import BookRecommendations from './BookRecommendations.vue'
 
 const route = useRoute()
 const { data, pending, error, reload } = useRequest<BookState>(() => `/api/v1/books/${route.params.id}`)
@@ -33,6 +34,7 @@ function voted(vote: VoteSummary) {
     <div class="book-actions"><RouterLink v-if="data.book.hasContent" class="button" :to="`/read/${data.book.id}`">{{ data.progress ? '继续阅读' : '开始阅读' }}</RouterLink><p v-else class="muted">暂未收录正文。</p><ShelfButton :key="data.book.id" :book-id="data.book.id" :in-shelf="data.inShelf" @change="changed" /><RouterLink class="shelf-link" to="/bookshelf">我的书架 →</RouterLink></div>
     <p role="status" class="muted">{{ notice }}</p>
     <BookVote :key="data.book.id" :summary="data.vote" @change="voted" />
+    <BookRecommendations :key="data.book.id" :book-id="data.book.id" />
   </article>
 </template>
 

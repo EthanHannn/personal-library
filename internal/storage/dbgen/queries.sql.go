@@ -608,6 +608,83 @@ func (q *Queries) ListBooks(ctx context.Context, arg ListBooksParams) ([]ListBoo
 	return items, nil
 }
 
+const personalVoteWindow = `-- name: PersonalVoteWindow :many
+SELECT v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
+FROM votes v JOIN books b ON b.id=v.book_id JOIN rating_snapshots s ON s.book_id=b.id
+WHERE v.reader_id=?1 AND b.status='APPROVED'
+ AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')
+ AND (?2='' OR v.type=?2)
+ AND (?3=0 OR v.created_at<?4 OR (v.created_at=?4 AND v.id>?5))
+ORDER BY v.created_at DESC,v.id ASC LIMIT ?6
+`
+
+type PersonalVoteWindowParams struct {
+	ReaderID  string
+	VoteType  interface{}
+	HasCursor interface{}
+	AfterTime int64
+	AfterID   string
+	PageLimit int64
+}
+
+type PersonalVoteWindowRow struct {
+	EntryID      string
+	Type         string
+	CreatedAt    int64
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+}
+
+func (q *Queries) PersonalVoteWindow(ctx context.Context, arg PersonalVoteWindowParams) ([]PersonalVoteWindowRow, error) {
+	rows, err := q.db.QueryContext(ctx, personalVoteWindow,
+		arg.ReaderID,
+		arg.VoteType,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PersonalVoteWindowRow{}
+	for rows.Next() {
+		var i PersonalVoteWindowRow
+		if err := rows.Scan(
+			&i.EntryID,
+			&i.Type,
+			&i.CreatedAt,
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const previousChapter = `-- name: PreviousChapter :many
 SELECT c.idx, c.title FROM chapters c
 JOIN book_contents bc ON bc.book_id=c.book_id AND bc.version=c.content_version
@@ -646,6 +723,26 @@ func (q *Queries) PreviousChapter(ctx context.Context, arg PreviousChapterParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const profileCounts = `-- name: ProfileCounts :one
+SELECT
+ (SELECT count(*) FROM shelf_entries s JOIN books b ON b.id=s.book_id WHERE s.reader_id=?1 AND b.status='APPROVED') AS shelf,
+ (SELECT count(*) FROM reading_progress p JOIN books b ON b.id=p.book_id WHERE p.reader_id=?1 AND b.status='APPROVED') AS reading,
+ (SELECT count(*) FROM votes v JOIN books b ON b.id=v.book_id WHERE v.reader_id=?1 AND b.status='APPROVED' AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')) AS votes
+`
+
+type ProfileCountsRow struct {
+	Shelf   int64
+	Reading int64
+	Votes   int64
+}
+
+func (q *Queries) ProfileCounts(ctx context.Context, readerID string) (ProfileCountsRow, error) {
+	row := q.db.QueryRowContext(ctx, profileCounts, readerID)
+	var i ProfileCountsRow
+	err := row.Scan(&i.Shelf, &i.Reading, &i.Votes)
+	return i, err
 }
 
 const progressReceipt = `-- name: ProgressReceipt :one
@@ -890,6 +987,88 @@ func (q *Queries) ReadingWindow(ctx context.Context, arg ReadingWindowParams) ([
 			&i.HasContent,
 			&i.Score,
 			&i.InShelf,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const relatedBooks = `-- name: RelatedBooks :many
+SELECT b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
+ CAST(CASE WHEN ?1<>'' AND b.author=?1 THEN 2 ELSE 1 END AS INTEGER) AS relevance,
+ CAST(CASE WHEN ?2>0 AND b.word_count>0 THEN abs(1.0*b.word_count/?2-1) ELSE 100 END AS REAL) AS distance
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+WHERE b.id<>?3 AND b.status='APPROVED' AND b.has_content=1
+ AND (b.title<>?4 OR b.author<>?5)
+ AND ((?1<>'' AND b.author=?1)
+   OR (?6<>'' AND (b.tag1=?6 OR b.tag2=?6))
+   OR (?7<>'' AND (b.tag1=?7 OR b.tag2=?7)))
+ORDER BY relevance DESC, distance ASC, s.score DESC, b.id DESC LIMIT 6
+`
+
+type RelatedBooksParams struct {
+	Author         interface{}
+	Words          interface{}
+	BookID         int64
+	Title          string
+	OriginalAuthor string
+	Tag1           interface{}
+	Tag2           interface{}
+}
+
+type RelatedBooksRow struct {
+	ID           int64
+	Title        string
+	Author       string
+	Tag1         string
+	Tag2         string
+	WordCount    int64
+	ChapterCount int64
+	HasContent   int64
+	Score        float64
+	Relevance    int64
+	Distance     float64
+}
+
+// Recommendations use local metadata only. Unknown identities cannot create
+// matches, and absent candidates remain an empty list instead of random books.
+func (q *Queries) RelatedBooks(ctx context.Context, arg RelatedBooksParams) ([]RelatedBooksRow, error) {
+	rows, err := q.db.QueryContext(ctx, relatedBooks,
+		arg.Author,
+		arg.Words,
+		arg.BookID,
+		arg.Title,
+		arg.OriginalAuthor,
+		arg.Tag1,
+		arg.Tag2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RelatedBooksRow{}
+	for rows.Next() {
+		var i RelatedBooksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Tag1,
+			&i.Tag2,
+			&i.WordCount,
+			&i.ChapterCount,
+			&i.HasContent,
+			&i.Score,
+			&i.Relevance,
+			&i.Distance,
 		); err != nil {
 			return nil, err
 		}

@@ -215,3 +215,32 @@ LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 SELECT tag1, tag2, count(*) AS total FROM books
 WHERE status='APPROVED' AND tag1<>''
 GROUP BY tag1, tag2 ORDER BY tag1, total DESC, tag2;
+
+-- Recommendations use local metadata only. Unknown identities cannot create
+-- matches, and absent candidates remain an empty list instead of random books.
+-- name: RelatedBooks :many
+SELECT b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
+ CAST(CASE WHEN sqlc.arg(author)<>'' AND b.author=sqlc.arg(author) THEN 2 ELSE 1 END AS INTEGER) AS relevance,
+ CAST(CASE WHEN sqlc.arg(words)>0 AND b.word_count>0 THEN abs(1.0*b.word_count/sqlc.arg(words)-1) ELSE 100 END AS REAL) AS distance
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+WHERE b.id<>sqlc.arg(book_id) AND b.status='APPROVED' AND b.has_content=1
+ AND (b.title<>sqlc.arg(title) OR b.author<>sqlc.arg(original_author))
+ AND ((sqlc.arg(author)<>'' AND b.author=sqlc.arg(author))
+   OR (sqlc.arg(tag1)<>'' AND (b.tag1=sqlc.arg(tag1) OR b.tag2=sqlc.arg(tag1)))
+   OR (sqlc.arg(tag2)<>'' AND (b.tag1=sqlc.arg(tag2) OR b.tag2=sqlc.arg(tag2))))
+ORDER BY relevance DESC, distance ASC, s.score DESC, b.id DESC LIMIT 6;
+
+-- name: ProfileCounts :one
+SELECT
+ (SELECT count(*) FROM shelf_entries s JOIN books b ON b.id=s.book_id WHERE s.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED') AS shelf,
+ (SELECT count(*) FROM reading_progress p JOIN books b ON b.id=p.book_id WHERE p.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED') AS reading,
+ (SELECT count(*) FROM votes v JOIN books b ON b.id=v.book_id WHERE v.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED' AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')) AS votes;
+
+-- name: PersonalVoteWindow :many
+SELECT v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
+FROM votes v JOIN books b ON b.id=v.book_id JOIN rating_snapshots s ON s.book_id=b.id
+WHERE v.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED'
+ AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')
+ AND (sqlc.arg(vote_type)='' OR v.type=sqlc.arg(vote_type))
+ AND (sqlc.arg(has_cursor)=0 OR v.created_at<sqlc.arg(after_time) OR (v.created_at=sqlc.arg(after_time) AND v.id>sqlc.arg(after_id)))
+ORDER BY v.created_at DESC,v.id ASC LIMIT sqlc.arg(page_limit);

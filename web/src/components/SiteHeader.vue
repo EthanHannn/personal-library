@@ -13,7 +13,7 @@ function logout() { window.dispatchEvent(new Event('library:auth-lost')) }
       <nav class="nav" aria-label="主导航">
         <RouterLink to="/library">书库</RouterLink>
         <RouterLink to="/bookshelf">书架</RouterLink>
-        <span v-if="data" class="nickname">{{ data.user.nickname }}</span>
+        <RouterLink to="/profile">我的</RouterLink>
         <a v-if="data" :href="data.logoutUrl" @click="logout">退出</a>
       </nav>
     </div>

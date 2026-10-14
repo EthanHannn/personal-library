@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: '/category/:tag', component: () => import('./views/CatalogView.vue'), props: route => ({ kind: 'category', name: route.params.tag }) },
     { path: '/author/:name', component: () => import('./views/CatalogView.vue'), props: route => ({ kind: 'author', name: route.params.name }) },
     { path: '/bookshelf', component: () => import('./views/BookshelfView.vue') },
+    { path: '/profile', component: () => import('./views/ProfileView.vue') },
     { path: '/book/:id(\\d+)', component: () => import('./views/BookView.vue') },
     { path: '/read/:id(\\d+)', component: () => import('./views/ReadView.vue') },
     { path: '/:pathMatch(.*)*', component: () => import('./views/NotFoundView.vue') },

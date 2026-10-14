@@ -49,6 +49,18 @@ export interface HomeData {
   reading: CollectionEntry[]
 }
 
+export interface ProfileData {
+  nickname: string
+  accountUrl: string
+  counts: { shelf: number; reading: number; votes: number }
+  reading: CollectionEntry[]
+}
+export interface PersonalVotes {
+  entries: { book: Book; type: VoteType; createdAt: number }[]
+  nextCursor: string | null
+}
+export interface RelatedBooks { entries: { book: Book; reason: string }[] }
+
 export interface ContentBlock {
   book: Pick<Book, 'id' | 'title' | 'author' | 'chapterCount'>
   chapter: { idx: number; title: string }

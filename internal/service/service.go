@@ -59,6 +59,10 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 	collections := collectionAPI{store: store, readerID: user.ID}
 	catalog := catalogAPI{store: store}
 	votes := voteAPI{store: store, readerID: user.ID}
+	profile := profileAPI{store: store, readerID: user.ID, portalUser: config.User, accountURL: config.AuthOrigin}
+	mux.HandleFunc("GET /api/v1/profile", profile.profile)
+	mux.HandleFunc("GET /api/v1/votes", profile.votes)
+	mux.HandleFunc("GET /api/v1/books/{id}/recommendations", profile.related)
 	mux.HandleFunc("GET /api/v1/books/{id}/vote", votes.vote)
 	mux.HandleFunc("PUT /api/v1/books/{id}/vote", votes.vote)
 	mux.HandleFunc("GET /api/v1/books", catalog.books)
