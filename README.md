@@ -34,9 +34,9 @@ go run ./cmd/library serve --db .local/m1/library.db --novels .local/m0/novels -
 
 默认监听 `127.0.0.1:8080`。`serve` 从新业务库查询文件版本，无需再传外部 manifest；未完成校验的迁移库、缺失或不匹配的门户读者映射会阻止启动。正常启动只检查 schema 和身份映射，不全表扫描。
 
-当前 schema 为 v3，升级前先备份业务库并显式执行 `library migrate --db <数据库>`。`/profile` 汇总个人记录和本机阅读设置；`/manage` 提供书目审核/修正、TXT 预览与确认、目录检查、起点公开章节采集、单本及批量封面补全。导入只新增作品或补充缺失正文，不覆盖已有正文；来源评分与个人关系保留。规则推荐只使用已有作者/分类等元数据，候选不足时不展示。
+当前 schema 为 v4，升级前先备份业务库并显式执行 `library migrate --db <数据库>`。`/profile` 汇总个人记录和本机阅读设置；`/manage` 提供书目审核/修正、TXT 预览与确认、目录检查、多书源搜索与公开章节采集、单本及批量封面补全。导入只新增作品或补充缺失正文，不覆盖已有正文；来源评分与个人关系保留。规则推荐只使用已有作者/分类等元数据，候选不足时不展示。
 
-`--covers` 和 `--collected` 默认分别为数据库同级的 `covers/`、`collected/`，随可写数据目录持久化。旧封面复制到新封面根目录，保留 `real/` 等子目录。采集内容通过保留路径前缀 `_collected/` 读取，原小说根目录不能占用该名称。单 worker 顺序处理持久任务，可取消、重试及恢复；网络请求间隔至少 5 秒，验证页和 403/429 会触发 6 小时来源冷却。起点付费章不采集，部分正文会明确标记；浏览器采集工具生成的 TXT 可经同一导入流程处理。取消任务保留暂存文件，暂不自动清理。
+`--covers` 和 `--collected` 默认分别为数据库同级的 `covers/`、`collected/`，随可写数据目录持久化。旧封面复制到新封面根目录，保留 `real/` 等子目录。采集内容通过保留路径前缀 `_collected/` 读取，原小说根目录不能占用该名称。单 worker 顺序处理持久任务，可取消、重试及恢复；默认网络请求间隔为 5 秒，自定义书源可配置 1–60 秒，验证页和 403/429 会触发 6 小时来源冷却。起点付费章不采集，部分正文会明确标记；浏览器采集工具生成的 TXT 可经同一导入流程处理。取消任务保留暂存文件，暂不自动清理。
 
 Vue 3 + TypeScript + Vite + Vue Router 静态构建支持 `/` 首页、`/library`、`/category/:tag`、`/author/:name`、`/bookshelf`、`/book/:id`、`/read/:id?c=N`。分类/作者名称按一个 URL 段编码，可包含中文及特殊字符。首页包含精选轮播、最近阅读、高分和最近入库；精选从最多 30 部高分且有正文的仙草票候选中随机取 5 部，轮播由读者手动切换。馆藏统计覆盖全部已审核书目，高分栏目只是一种浏览预设，低分或无正文书目仍可收藏。
 
@@ -174,6 +174,17 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 站点模板是需要检查的起点：2026-10-14 小样本中，香书的搜索/目录/首章通过，书海阁的目录及两页首章通过，但其后台搜索返回站点错误，模板仅启用链接采集。两站模板由当前页面结构独立编写，不引入上游采集器运行时；规则职责参考 [so-novel](https://github.com/freeok/so-novel) 等，完整选型和版本证据记在 Obsidian。当前正文处理不等于对所有作品或全目录的质量保证。
 
 新增回归检查：`node tools/m3/sources-smoke.mjs --base http://127.0.0.1:16871`；必须使用独立合成库。网络观察测试默认跳过，可通过环境变量 `LIBRARY_SOURCE_LIVE=1` 运行 `go test ./internal/management -run TestLiveSourceSamples -v`，仅检查样本元数据、目录和首章，不入库。
+
+已审阅并改写成本项目格式的书源包，可批量加载到本地独立库并验证：
+
+```powershell
+node tools/m3/load-source-pack.mjs --pack .local/reviewed-sources.json --out .local/source-check-report.json
+node --test tools/m3/load-source-pack.test.mjs
+```
+
+工具默认访问 `http://127.0.0.1:16871`，使用合成读者 `owner` 和测试 Origin；只允许回环 HTTP 服务。包的 `format` 为 `personal-library/source-pack@1`，`sources` 为数组；每项含完整 `config`、`sample`（`url/title/author`，支持搜索时还需 `query`）及 `provenance`（`repository/revision/path`，建议补充 `license/notes`）。上游原文件需先审阅和适配，工具不会执行脚本或自动转换阅读书源。
+
+工具复用相同配置，遇到同名不同规则时报告冲突；逐源检查详情、目录、首章及可选搜索，并比对预期书名/作者。检查失败会停用该配置，报告保留任务、规则版本、错误和最终启停状态；返回码 1 表示有未通过项，须查看报告。搜索检查会确认有候选，目标作品是否包含其中仍应在多源搜索结果中核对。检查不生成入库任务，也不承诺全本完整。原始书源、配置包和在线报告保存在 `.local/`，具体仓库版本、可用源和环境差异记入 Obsidian。
 
 ## 数据与项目文档
 
