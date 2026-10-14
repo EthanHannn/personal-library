@@ -62,7 +62,7 @@ INSERT INTO books VALUES(1,'样本','作者',2,'sample.txt',1),(2,'缺失','作�
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := gateway.Parse("owner", "https://library.test", "https://auth.test")
+	c, err := gateway.Parse("owner", "https://library.test", "https://auth.test", "https://portal.test")
 	if err != nil {
 		t.Fatal(err)
 	}

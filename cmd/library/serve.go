@@ -35,7 +35,7 @@ func serve(args []string) error {
 	if *dbPath == "" || *novels == "" || flags.NArg() != 0 {
 		return fmt.Errorf("serve requires --db and --novels")
 	}
-	config, err := gateway.Parse(os.Getenv("PORTAL_ALLOWED_USER"), os.Getenv("LIBRARY_PUBLIC_URL"), os.Getenv("PORTAL_AUTH_URL"))
+	config, err := gateway.Parse(os.Getenv("PORTAL_ALLOWED_USER"), os.Getenv("LIBRARY_PUBLIC_URL"), os.Getenv("PORTAL_AUTH_URL"), os.Getenv("PORTAL_PUBLIC_URL"))
 	if err != nil {
 		return err
 	}

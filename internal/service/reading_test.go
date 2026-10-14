@@ -92,7 +92,7 @@ func TestProgressReplayConflictAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	config, _ := gateway.Parse("owner", "https://library.test", "https://auth.test")
+	config, _ := gateway.Parse("owner", "https://library.test", "https://auth.test", "https://portal.test")
 	restarted, err := New(context.Background(), db, r, config, fstest.MapFS{"index.html": {Data: []byte("<title>reader</title>")}})
 	if err != nil {
 		t.Fatal(err)

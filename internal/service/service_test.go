@@ -56,7 +56,7 @@ INSERT INTO import_runs(id,source_sha256,manifest_sha256,source_version,portal_u
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := gateway.Parse("owner", "https://library.test", "https://auth.test")
+	config, err := gateway.Parse("owner", "https://library.test", "https://auth.test", "https://portal.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +143,7 @@ func TestBusinessReadsAndIdentity(t *testing.T) {
 	h, _ := serviceFixture(t)
 	checks := map[string][]string{
 		"/api/v1/me":                          {`"id":"default-reader"`, `"nickname":"我的昵称"`, `"logoutUrl":"https://auth.test/logout"`},
+		"/api/v1/profile":                     {`"accountUrl":"https://portal.test/settings"`, `"nickname":"我的昵称"`},
 		"/api/v1/books?limit=1":               {`"id":42`, `"nextAfter":null`},
 		"/api/v1/books/42":                    {`"intro":"简介"`, `"hasContent":true`},
 		"/api/v1/books/42/chapters/1/content": {`"text":"第一章\n这是正文😀。"`, `"nextCursor":null`, `"idx":1`},

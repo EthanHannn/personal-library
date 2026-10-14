@@ -11,11 +11,11 @@ import (
 	"strings"
 )
 
-type Config struct{ User, Origin, AuthOrigin string }
+type Config struct{ User, Origin, AuthOrigin, PortalOrigin string }
 
 var validUsername = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 
-func Parse(user, publicURL, authURL string) (Config, error) {
+func Parse(user, publicURL, authURL, portalURL string) (Config, error) {
 	if !validUsername.MatchString(user) {
 		return Config{}, fmt.Errorf("PORTAL_ALLOWED_USER is missing or invalid")
 	}
@@ -27,7 +27,11 @@ func Parse(user, publicURL, authURL string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("PORTAL_AUTH_URL: %w", err)
 	}
-	return Config{User: user, Origin: origin, AuthOrigin: auth}, nil
+	portal, err := originURL(portalURL)
+	if err != nil {
+		return Config{}, fmt.Errorf("PORTAL_PUBLIC_URL: %w", err)
+	}
+	return Config{User: user, Origin: origin, AuthOrigin: auth, PortalOrigin: portal}, nil
 }
 
 func originURL(raw string) (string, error) {
@@ -49,7 +53,7 @@ func Error(w http.ResponseWriter, status int, code, message string) {
 // Wrap assumes only the trusted gateway can reach the backend. It deliberately
 // does not interpret cookies, bearer tokens, or alternate forwarded identities.
 func (c Config) Wrap(next http.Handler) http.Handler {
-	_, configErr := Parse(c.User, c.Origin, c.AuthOrigin)
+	_, configErr := Parse(c.User, c.Origin, c.AuthOrigin, c.PortalOrigin)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

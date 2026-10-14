@@ -34,7 +34,7 @@ func importLegacy(args []string) error {
 	}
 	// Reuse the portal username contract without requiring live URL config for
 	// an offline operation.
-	if _, err := gateway.Parse(o.PortalUser, "https://library.example.test", "https://auth.example.test"); err != nil {
+	if _, err := gateway.Parse(o.PortalUser, "https://library.example.test", "https://auth.example.test", "https://portal.example.test"); err != nil {
 		return err
 	}
 	m, err := probe.LoadManifest(*manifest)

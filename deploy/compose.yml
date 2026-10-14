@@ -8,6 +8,7 @@ services:
       PORTAL_ALLOWED_USER: ${PORTAL_ALLOWED_USER:?set the trusted portal username}
       LIBRARY_PUBLIC_URL: ${LIBRARY_PUBLIC_URL:?set the HTTPS library origin}
       PORTAL_AUTH_URL: ${PORTAL_AUTH_URL:?set the HTTPS Authelia origin}
+      PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:?set the HTTPS portal origin}
     volumes:
       - type: bind
         source: ${LIBRARY_DATA_DIR:?set the absolute business database directory}

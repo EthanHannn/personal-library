@@ -40,7 +40,7 @@ func coverURL(id, has int64) string {
 }
 
 func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gateway.Config, assets fs.FS, managers ...*management.Manager) (http.Handler, error) {
-	if _, err := gateway.Parse(config.User, config.Origin, config.AuthOrigin); err != nil {
+	if _, err := gateway.Parse(config.User, config.Origin, config.AuthOrigin, config.PortalOrigin); err != nil {
 		return nil, err
 	}
 	if err := db.Ready(ctx, config.User); err != nil {
@@ -73,7 +73,7 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 	collections := collectionAPI{store: store, readerID: user.ID}
 	catalog := catalogAPI{store: store}
 	votes := voteAPI{store: store, readerID: user.ID}
-	profile := profileAPI{store: store, readerID: user.ID, portalUser: config.User, accountURL: config.AuthOrigin}
+	profile := profileAPI{store: store, readerID: user.ID, portalUser: config.User, accountURL: config.PortalOrigin + "/settings"}
 	mux.HandleFunc("GET /api/v1/profile", profile.profile)
 	mux.HandleFunc("GET /api/v1/votes", profile.votes)
 	mux.HandleFunc("GET /api/v1/books/{id}/recommendations", profile.related)

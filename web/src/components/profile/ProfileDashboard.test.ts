@@ -11,7 +11,7 @@ async function render() {
   await vi.waitFor(() => expect(wrapper.text()).toContain('我的评价'))
   return { wrapper, router }
 }
-const profile = { nickname: '我的昵称', accountUrl: 'https://auth.test', counts: { shelf: 2, reading: 1, votes: 1 }, reading: [] }
+const profile = { nickname: '我的昵称', accountUrl: 'https://portal.test/settings', counts: { shelf: 2, reading: 1, votes: 1 }, reading: [] }
 const votes = { entries: [{ book: { id: 42, title: '我的藏书', author: '作者' }, type: 'XIANCAO', createdAt: 1000 }], nextCursor: null }
 
 it('shows personal records and keeps a filter in the URL while applying local reader preferences', async () => {
@@ -26,7 +26,7 @@ it('shows personal records and keeps a filter in the URL while applying local re
     expect(wrapper.text()).not.toContain('我的藏书')
     await wrapper.get('input[type="range"]').setValue(24)
     expect(JSON.parse(localStorage.getItem('library.reader.preferences.v1')!).fontSize).toBe(24)
-    expect(wrapper.get('a[href="https://auth.test"]').text()).toContain('门户账户')
+    expect(wrapper.get('a[href="https://portal.test/settings"]').text()).toContain('门户账户')
   } finally { wrapper.unmount() }
 })
 

@@ -54,7 +54,7 @@ INSERT INTO reading_progress(id,reader_id,book_id,chapter_idx,percent,updated_at
 	if err := json.Unmarshal(w.Body.Bytes(), &profile); err != nil || w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String(), err)
 	}
-	if profile.Counts.Votes != 2 || profile.Counts.Shelf != 1 || profile.Counts.Reading != 1 || len(profile.Reading) != 1 || profile.Nickname != "我的昵称" || profile.AccountURL != "https://auth.test" {
+	if profile.Counts.Votes != 2 || profile.Counts.Shelf != 1 || profile.Counts.Reading != 1 || len(profile.Reading) != 1 || profile.Nickname != "我的昵称" || profile.AccountURL != "https://portal.test/settings" {
 		t.Fatalf("profile %+v", profile)
 	}
 	var page struct {

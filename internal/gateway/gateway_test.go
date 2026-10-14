@@ -3,11 +3,12 @@ package gateway
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestGatewayContract(t *testing.T) {
-	c, err := Parse("owner", "https://library.example.test", "https://auth.example.test")
+	c, err := Parse("owner", "https://library.example.test", "https://auth.example.test", "https://portal.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +59,21 @@ func TestGatewayContract(t *testing.T) {
 
 func TestConfigRejectsInvalidOrigins(t *testing.T) {
 	for _, origin := range []string{"", "http://library.test", "https://user:pass@library.test", "https://library.test/path", "https://library.test/?x=y", "https://library.test/#x", "https://library.test/?"} {
-		if _, err := Parse("owner", origin, "https://auth.test"); err == nil {
+		if _, err := Parse("owner", origin, "https://auth.test", "https://portal.test"); err == nil {
 			t.Fatalf("accepted %q", origin)
 		}
+		if _, err := Parse("owner", "https://library.test", "https://auth.test", origin); err == nil || !strings.Contains(err.Error(), "PORTAL_PUBLIC_URL") {
+			t.Fatalf("portal origin %q: %v", origin, err)
+		}
+	}
+}
+
+func TestPortalOriginIsIndependent(t *testing.T) {
+	c, err := Parse("owner", "https://books.test", "https://login.test", "https://HOME.test/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PortalOrigin != "https://home.test" || c.AuthOrigin != "https://login.test" {
+		t.Fatalf("portal/auth origins: %+v", c)
 	}
 }

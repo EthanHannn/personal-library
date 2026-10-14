@@ -54,7 +54,7 @@ jobs:
           bin/library-linux-amd64 migrate --db .local/smoke-target/library.db
           bin/library-linux-amd64 import-legacy --source .local/smoke/library.db --db .local/smoke-target/library.db --novels .local/smoke/novels --manifest .local/smoke/manifest.json --portal-user owner --source-version synthetic-ci
           sudo chown -R 65532:65532 .local/smoke-target
-          docker run -d --name library-check --read-only --memory 256m --cpus 1 -p 127.0.0.1:16871:8080 -v "$PWD/.local/smoke-target:/data/library" -v "$PWD/.local/smoke/novels:/data/novels:ro" -e PORTAL_ALLOWED_USER=owner -e LIBRARY_PUBLIC_URL=https://library.example.test -e PORTAL_AUTH_URL=https://auth.example.test personal-library:check
+          docker run -d --name library-check --read-only --memory 256m --cpus 1 -p 127.0.0.1:16871:8080 -v "$PWD/.local/smoke-target:/data/library" -v "$PWD/.local/smoke/novels:/data/novels:ro" -e PORTAL_ALLOWED_USER=owner -e LIBRARY_PUBLIC_URL=https://library.example.test -e PORTAL_AUTH_URL=https://auth.example.test -e PORTAL_PUBLIC_URL=https://portal.example.test personal-library:check
           trap 'docker logs library-check; docker rm -f library-check' EXIT
           for attempt in {1..20}; do
             if docker exec library-check /library healthcheck; then break; fi

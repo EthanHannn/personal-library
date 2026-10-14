@@ -87,11 +87,21 @@ go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
 前端构建后，交叉编译 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags release -trimpath -ldflags '-s -w' -o bin/library-linux-amd64 ./cmd/library`，再执行 `docker build -f deploy/Dockerfile -t personal-library:local .`。PowerShell 需通过 `$env:GOOS='linux'` 等设置变量。`release` 构建将 `web/dist` 嵌入 Go 二进制，运行时没有 Node 服务。
 
-`deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及三个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
+`deploy/compose.yml` 用于本地演练，默认映射回环端口 16871，限制 1 CPU / 256 MiB。设置 `LIBRARY_DATA_DIR`（含已完成迁移的 `library.db`）、`LIBRARY_NOVEL_ROOT`（只读正文）及四个门户环境变量，再执行 `docker compose -p personal-library-local -f deploy/compose.yml up -d`。数据目录必须已存在，并对容器 UID/GID 65532 可写；正文目录只需可读。使用独立演练目录，当前不能据此替换生产旧站。
 
 CI 在 Windows/Linux 上运行前端测试、构建和 Go 测试；Linux 另检查 race、sqlc 生成一致性、合成导入及真实发布容器的基础、进度、首页/书架、检索和重启恢复。可复用 `node tools/m1/smoke.mjs --base http://127.0.0.1:16871`、`node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --out .local/progress-smoke.json` 和 `node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --out .local/shelf-smoke.json`。M2/M3 脚本在重启后分别加 `--resume` 和对应报告路径，验证持久进度/回执与收藏。书库只读回归用 `node tools/m3/catalog-smoke.mjs --base http://127.0.0.1:16871`。这些脚本只用于独立合成库。
 
 本地浏览器测试可启动 `node tools/m2/browser-gateway.mjs`，访问 `http://127.0.0.1:16872`。该回环测试网关使用合成会话和可控 503/401，只用于故障回归，不是 Authelia，也不用于生产部署。`tools/m2/measure-progress.mjs` 可与 M0 读取测量脚本同时运行，记录同步写入延迟。
+
+真实门户联调使用本机 `personal-portal` 仓库的 nginx/Authelia 配置生成器。先构建带 `release` 标签的 Linux 二进制和 `personal-library:portal-check` 镜像（命令同上，将镜像标签替换），安装 Docker、OpenSSL、uv；浏览器检查还需 agent-browser 及其 Chromium：
+
+```powershell
+uv run --project D:/tools/personal-portal python -X utf8 tools/m4/portal-check.py --portal-repo D:/tools/personal-portal --out .local/portal-check --browser
+```
+
+替换 `--portal-repo` 和 `--project` 为本机门户仓库路径；输出目录必须不存在。脚本生成 5 本合成书、临时密码/TOTP 和自签名证书，沿用 `library` 应用与 `owner → default-reader` 映射，只映射 `127.0.0.1:18443`（可通过 `--port` 修改）。报告保留仓库版本、镜像 ID 和逐项结果；密码、TOTP 和会话不写入报告。结束时移除本轮容器与临时认证配置，合成业务库和报告留在输出目录。
+
+不带 `--browser` 时验证密码/TOTP、匿名页面与 API、可信身份、账户设置、书架/投票/进度、跨源拒绝、统一退出、重启和认证服务故障。`--browser` 另验证门户卡片、账户设置往返、320px 页面、会话失效后的本机进度恢复及退出链接；浏览器使用真实双因素 API 建立的临时会话，不覆盖 Authelia 登录表单交互。脚本不读取生产配置或账号，不代表真实数据迁移和生产验收。
 
 M3 首批可用 `node tools/m3/measure.mjs --base http://127.0.0.1:16871 --container personal-library-m3 --fixture .local/m0/fixture-summary.json --seconds 30 --out .local/reports/m3-mixed-read.json` 做 5 路混合读取短测。每轮各请求一次首页、书架、最近阅读、详情和正文；报告记录延迟、响应字节及容器内存。它不包含封面/导入任务、写入或门户开销，不代替 M4 完整性能验收。
 
@@ -132,9 +142,12 @@ go run ./cmd/library probe --db .local/m0/library.db --novels .local/m0/novels -
 PORTAL_ALLOWED_USER=owner
 LIBRARY_PUBLIC_URL=https://library.example.test
 PORTAL_AUTH_URL=https://auth.example.test
+PORTAL_PUBLIC_URL=https://portal.example.test
 ```
 
 服务默认只监听 `127.0.0.1:8080`。测试请求提供 `Remote-User: owner`；这是受控本地测试身份，生产中必须由 nginx 在 Authelia 认证后覆盖注入，后端端口只能供可信网关访问。
+
+`PORTAL_PUBLIC_URL` 指向门户首页所在的 HTTPS origin，个人中心的账户设置进入该站 `/settings`；`PORTAL_AUTH_URL` 指向 Authelia，统一退出仍进入认证站 `/logout`。两个地址分别配置，启动时缺少任一地址都会报错。升级已有测试或部署配置时须补充 `PORTAL_PUBLIC_URL`。
 
 | 路径 | 行为 |
 | --- | --- |
