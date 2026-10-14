@@ -73,9 +73,11 @@ jobs:
           node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-smoke.json
           node tools/m3/vote-smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-vote-smoke.json
           node tools/m3/management-smoke.mjs --base http://127.0.0.1:16871 --out .local/m3-management-smoke.json
+          node tools/m3/sources-smoke.mjs --base http://127.0.0.1:16871 --out .local/m3-sources-smoke.json
           docker restart library-check
           for attempt in {1..20}; do
             if docker exec library-check /library healthcheck; then break; fi
             sleep 1
           done
           node tools/m3/management-smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-management-smoke.json
+          node tools/m3/sources-smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-sources-smoke.json

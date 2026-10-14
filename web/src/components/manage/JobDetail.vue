@@ -5,8 +5,9 @@ import { useJob } from '../../composables/useJob'
 import { useMutation } from '../../composables/useMutation'
 import { jobNames, jobStates } from '../../manage'
 import RequestStatus from '../RequestStatus.vue'
+import SearchResults from './SearchResults.vue'
 const props = defineProps<{ id: string }>()
-const emit = defineEmits<{ change: []; update: [job: Job] }>()
+const emit = defineEmits<{ change: []; update: [job: Job]; created: [job: Job] }>()
 const { data, error, pending, reload } = useJob(() => props.id)
 const action = useMutation()
 watch(data, value => { if (value) emit('update', value) })
@@ -20,8 +21,18 @@ async function act(name: string) { if (await action.run(`/api/v1/manage/jobs/${e
     <p v-if="data.message && data.message !== 'confirm'" role="status">{{ data.message }}</p>
     <p v-if="data.nextAt > Date.now()" class="muted">可继续时间：{{ new Date(data.nextAt).toLocaleString('zh-CN') }}</p>
     <p v-if="data.result.planned" class="muted">已采集 {{ data.result.downloaded }} / {{ data.result.planned }} 章。</p>
+    <SearchResults v-if="data.kind === 'search'" :candidates="data.result.searchCandidates ?? []" :sources="data.result.searchSources ?? []" @created="emit('created', $event)" />
+    <template v-if="data.result.sourceCheck">
+      <h3>{{ data.result.sourceCheck.passed ? '样本检查通过' : '样本检查未通过' }}</h3>
+      <p>规则 v{{ data.result.sourceCheck.version }} · {{ data.result.sourceCheck.stage }}<span v-if="data.result.sourceCheck.error"> · {{ data.result.sourceCheck.error }}</span></p>
+      <p v-if="data.result.sourceCheck.title">{{ data.result.sourceCheck.title }} · {{ data.result.sourceCheck.author || '未提供作者' }} · 目录 {{ data.result.sourceCheck.chapters }} 章</p>
+      <p v-if="data.result.sourceCheck.sampleWords">首章「{{ data.result.sourceCheck.sampleTitle }}」 · {{ data.result.sourceCheck.sampleWords }} 字</p>
+      <p v-if="data.result.sourceCheck.searchCount !== undefined">样本搜索找到 {{ data.result.sourceCheck.searchCount }} 个候选。</p>
+      <RouterLink class="text-button" to="/manage?tab=sources">返回我的书源</RouterLink>
+    </template>
     <template v-if="data.result.file">
       <h3>{{ data.result.title }} <span class="muted">{{ data.result.author }}</span></h3>
+      <p v-if="data.result.source && typeof data.result.source !== 'string'" class="muted">来源：{{ data.result.source.label || data.result.source.name }}<span v-if="data.result.source.ruleVersion"> · 规则 v{{ data.result.source.ruleVersion }}</span> · 已采集 {{ data.result.source.downloaded }} / {{ data.result.source.total }} 章<span v-if="data.result.source.workStatus"> · 来源标注：{{ data.result.source.workStatus }}</span></p>
       <p class="muted">{{ data.result.chapterCount }} 章 · 约 {{ data.result.words?.toLocaleString() }} 字 · {{ data.result.file.encoding }} · {{ (data.result.file.size / 1024).toFixed(1) }} KiB</p>
       <ul v-if="data.result.warnings?.length" class="preview-warnings"><li v-for="warning in data.result.warnings" :key="warning">{{ warning }}</li></ul>
       <h4>目录预览（前 12 章）</h4><ol><li v-for="chapter in data.result.chapters" :key="chapter.idx">{{ chapter.title }}</li></ol>

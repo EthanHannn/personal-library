@@ -10,6 +10,7 @@ import ManagedCatalog from './ManagedCatalog.vue'
 import CollectForm from './CollectForm.vue'
 import ImportForm from './ImportForm.vue'
 import JobDetail from './JobDetail.vue'
+import SourceManager from './SourceManager.vue'
 const route = useRoute(), router = useRouter()
 const tab = computed(() => typeof route.query.tab === 'string' ? route.query.tab : 'books')
 const job = computed(() => typeof route.query.job === 'string' ? route.query.job : '')
@@ -26,14 +27,15 @@ async function covers() { const result = await action.run<{ jobs: Job[] }>('/api
   <header class="page-heading"><p class="eyebrow">整理我的藏书</p><h1>书库管理</h1><p class="muted">补全书目信息，收录新的作品，查看导入和封面任务。</p></header>
   <RequestStatus :pending="pending" :error="error" @retry="reload" />
   <template v-if="data && action.error.value?.status !== 401">
-    <nav class="manage-tabs" aria-label="管理功能"><RouterLink v-for="(label, key) in { books: '书目', import: '导入 TXT', collect: '起点采集', jobs: '任务记录' }" :key="key" :to="{ path: '/manage', query: { tab: key } }" :aria-current="tab === key ? 'page' : undefined">{{ label }}</RouterLink></nav>
+    <nav class="manage-tabs" aria-label="管理功能"><RouterLink v-for="(label, key) in { books: '书目', import: '导入 TXT', collect: '网络采集', sources: '我的书源', jobs: '任务记录' }" :key="key" :to="{ path: '/manage', query: { tab: key } }" :aria-current="tab === key ? 'page' : undefined">{{ label }}</RouterLink></nav>
     <ManagedCatalog v-if="tab === 'books'" @created="created" />
     <ImportForm v-else-if="tab === 'import'" :key="path" :initial-path="path" @created="created" />
     <CollectForm v-else-if="tab === 'collect'" @created="created" />
+    <SourceManager v-else-if="tab === 'sources'" @created="created" />
     <template v-else>
       <div class="manage-actions"><button class="button secondary" :disabled="action.pending.value" @click="scan">检查正文与发现新 TXT</button><button class="button secondary" :disabled="action.pending.value" @click="covers">批量补全封面（最多 10 本）</button><button class="text-button" @click="reload">刷新任务列表</button></div>
       <p class="muted">任务按顺序处理；关闭页面后继续运行。等待确认的作品不会自动加入书库。</p>
-      <JobDetail v-if="job" :key="job" :id="job" @update="updated" />
+      <JobDetail v-if="job" :key="job" :id="job" @update="updated" @created="created" />
       <ul class="job-list"><li v-for="item in data.jobs" :key="item.id"><RouterLink :to="{ path: '/manage', query: { tab: 'jobs', job: item.id } }"><strong>{{ jobNames[item.kind] }}{{ item.input.title ? ` · ${item.input.title}` : item.input.bookId ? ` · 作品 ${item.input.bookId}` : '' }}</strong><span>{{ jobStates[item.status] }} · {{ new Date(item.createdAt).toLocaleString('zh-CN') }}</span></RouterLink></li></ul>
       <p v-if="!data.jobs.length" class="muted">还没有任务记录。</p>
       <div class="manage-actions"><RouterLink v-if="route.query.cursor" class="button secondary" to="/manage?tab=jobs">最近任务</RouterLink><RouterLink v-if="data.nextCursor" class="button secondary" :to="{ path: '/manage', query: { tab: 'jobs', cursor: data.nextCursor } }">更早的任务</RouterLink></div>

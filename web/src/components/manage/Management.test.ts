@@ -24,9 +24,10 @@ it('creates a preview without publishing and preserves metadata while filling mi
 })
 
 it('does not offer paid crawling and preserves a failed collection request for explicit retry', async () => {
-  let calls = 0; vi.stubGlobal('fetch', vi.fn(async () => ++calls === 1 ? response({ error: { message: '暂时不可用' } }, 503) : response({ ...job, kind: 'collect', status: 'queued' }, 202)))
+  let calls = 0; vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/api/v1/manage/sources' ? response({ sources: [{ id: 'qidian', version: 1, enabled: true, config: { name: '起点', group: '男频', baseUrl: 'https://www.qidian.com/' } }], templates: [] }) : ++calls === 1 ? response({ error: { message: '暂时不可用' } }, 503) : response({ ...job, kind: 'collect', status: 'queued' }, 202)))
   const wrapper = mount(CollectForm)
   try {
+    await flushPromises()
     expect(wrapper.text()).toContain('付费章节不采集')
     await wrapper.get('input[type="url"]').setValue('https://www.qidian.com/book/123/')
     await wrapper.get('form').trigger('submit'); await flushPromises()

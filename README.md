@@ -106,7 +106,7 @@ go run ./cmd/library migrate --db .local/m1/library.db
 go run ./cmd/library import-legacy --source .local/m0/library.db --db .local/m1/library.db --novels .local/m0/novels --manifest .local/m0/manifest.json --portal-user owner --source-version synthetic-m0-96abf8d
 ```
 
-目标目录须先存在。`migrate` 显式创建或升级 schema，当前为 v2；升级 M1 库保留全部 v1 数据及迁移校验值。它拒绝旧版 Prisma 数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
+目标目录须先存在。`migrate` 显式创建或升级 schema，当前为 v4；升级保留既有阅读记录、采集任务与迁移校验值。升级前应备份业务库和 collected/covers 目录，使用新版本显式运行 migrate 后再启动服务。它拒绝旧版 Prisma 数据库，正常服务启动不会迁移或扫描全库。业务库使用 WAL、一个写连接/两个读连接、每连接 foreign_keys/busy_timeout/cache 设置，写入 synchronous=FULL。
 
 导入默认每 5,000 行提交一次；`--batch-size` 最大 10,000，`--batch-pause 10ms` 可限速，`--max-batches N` 可主动停在检查点。相同命令继续执行会校验输入指纹后续传；源快照、正文、编码清单、门户用户或来源版本变化时拒绝继续。导入必须离线独占目标库。源数据异常不会静默删行或修正，修正输入后使用另一份新目标库重新演练。
 
@@ -162,6 +162,18 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 后台重任务预算使用合成图片验证：`go run ./cmd/library fixture-cover --output .local/m0/cover.jpg` 创建 4096×4096 JPEG；为原型启动命令添加 `--image-workload /fixture/cover.jpg` 后，每 10 秒串行解码一次并编码三个缩略尺寸。仅用于 M0 资源测试，不抓取网络图片、不发布封面、不修改数据库，也不代表持久任务已经实现。以 256 MiB 容器上限运行 30 分钟测量，可检查持续读取与单个图片任务并行的峰值。
 
 测量工具默认单并发；加 `--concurrency 5` 检查五个会话的余量。报告中的 `clientNode` 为负载工具版本，应用引擎版本应从对应镜像与 `verify-legacy` 的 `sqliteVersion` 核对。
+
+## 网络采集与添加书源
+
+进入「书库管理 → 我的书源 → 添加书源」，可从网页 CSS、JSON 接口或站点模板开始，也可在说明区域粘贴本项目格式的完整 JSON。填写站点域名、编码、请求间隔和 search/book/toc/chapter 规则后保存，再用样本作品链接检查详情、目录和首章。支持编辑、启停和版本冲突检测；仅启停的起点内置适配器继续保留。
+
+「网络采集」提供作品链接与多源搜书两种入口。搜书每次最多 8 个源、每源前 20 个候选，按书名和作者比较来源；选择后生成采集任务，最终仍需确认预览才会入库。任务保存创建时的规则、目录指纹和逐章检查点，重试不会改用编辑后的规则。遇到目录变化需新建任务。旧版已有的可读正文、收藏、投票和阅读进度不会因采集被覆盖；自动追更、换源替换和进度映射尚未提供。
+
+规则为本项目格式，HTML 使用 CSS 与属性提取，JSON 使用 RFC 6901 Pointer；不直接兼容 Legado/阅读书源、XPath、JS 或需浏览器渲染的站点。搜索支持 GET 或表单 POST；目录最多 50 页、单章最多 20 页，逐章保存，完整性只相对该源当前目录。配置中的请求只访问列出的公共域名，DNS 和每次重定向也会检查；不使用系统代理环境变量。
+
+站点模板是需要检查的起点：2026-10-14 小样本中，香书的搜索/目录/首章通过，书海阁的目录及两页首章通过，但其后台搜索返回站点错误，模板仅启用链接采集。两站模板由当前页面结构独立编写，不引入上游采集器运行时；规则职责参考 [so-novel](https://github.com/freeok/so-novel) 等，完整选型和版本证据记在 Obsidian。当前正文处理不等于对所有作品或全目录的质量保证。
+
+新增回归检查：`node tools/m3/sources-smoke.mjs --base http://127.0.0.1:16871`；必须使用独立合成库。网络观察测试默认跳过，可通过环境变量 `LIBRARY_SOURCE_LIVE=1` 运行 `go test ./internal/management -run TestLiveSourceSamples -v`，仅检查样本元数据、目录和首章，不入库。
 
 ## 数据与项目文档
 
