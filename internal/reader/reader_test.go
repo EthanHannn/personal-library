@@ -2,6 +2,7 @@ package reader
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -35,7 +37,7 @@ func fixture(t testing.TB, data []byte, encoding string) (*Reader, File) {
 
 func TestCharacterAlignedBlocks(t *testing.T) {
 	want := "第一章\r\n\r\n　中文𠀀😀，标点。\n末行没有换行" + strings.Repeat("超长的一行𠀀", 100)
-	for _, encoding := range []string{"utf-8", "utf-8-bom", "gb18030"} {
+	for _, encoding := range []string{"utf-8", "utf-8-bom", "gb18030", "utf-16le", "utf-16be"} {
 		t.Run(encoding, func(t *testing.T) {
 			data := []byte(want)
 			name := encoding
@@ -49,6 +51,9 @@ func TestCharacterAlignedBlocks(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+			}
+			if strings.HasPrefix(encoding, "utf-16") {
+				data = utf16Bytes("\ufeff"+want, encoding == "utf-16le")
 			}
 			r, ref := fixture(t, data, name)
 			for _, limit := range []int{4, 5, 7, 31, 256, MaxBlockBytes} {
@@ -111,10 +116,48 @@ func TestRejectInvalidEncoding(t *testing.T) {
 		{"utf-8", []byte{0xff}}, {"utf-8", []byte{0xe4, 0xb8}},
 		{"gb18030", []byte{0x81}}, {"gb18030", []byte{0x81, 0x30, 0x81}},
 		{"gb18030", []byte{0x81, 0x7f}}, {"gb18030", []byte{0xfe, 0x39, 0xfe, 0x39}},
+		{"utf-16le", []byte{0}}, {"utf-16be", []byte{0xd8, 0}},
+		{"utf-16le", []byte{0, 0xdc}}, {"utf-16be", []byte{0xd8, 0, 0, 0x41}},
 	} {
 		r, ref := fixture(t, tc.data, tc.encoding)
 		if _, err := r.Read(context.Background(), ref, 0, ref.Size, 0, 20); !errors.Is(err, ErrEncoding) {
 			t.Fatalf("%x: %v", tc.data, err)
+		}
+	}
+}
+
+func utf16Bytes(text string, little bool) []byte {
+	var order binary.ByteOrder = binary.BigEndian
+	if little {
+		order = binary.LittleEndian
+	}
+	codes := utf16.Encode([]rune(text))
+	raw := make([]byte, len(codes)*2)
+	for index, code := range codes {
+		order.PutUint16(raw[index*2:], code)
+	}
+	return raw
+}
+
+func TestUTF16ChapterBoundariesAndInteriorBOM(t *testing.T) {
+	for _, little := range []bool{true, false} {
+		encoding := "utf-16be"
+		if little {
+			encoding = "utf-16le"
+		}
+		prefix, content := "\ufeff前章\n", "\ufeff本章😀\r\n"
+		raw := utf16Bytes(prefix+content+"后章", little)
+		r, ref := fixture(t, raw, encoding)
+		start := int64(len(utf16Bytes(prefix, little)))
+		end := start + int64(len(utf16Bytes(content, little)))
+		block, err := r.Read(context.Background(), ref, start, end, start, 100)
+		if err != nil || block.Text != content || block.End != end {
+			t.Fatalf("%s chapter differs: %+v %v", encoding, block, err)
+		}
+		for _, bounds := range [][3]int64{{start + 1, end, start + 1}, {start, end - 1, start}, {start, end, start + 1}} {
+			if _, err := r.Read(context.Background(), ref, bounds[0], bounds[1], bounds[2], 100); !errors.Is(err, ErrEncoding) {
+				t.Fatalf("unaligned range accepted: %v", err)
+			}
 		}
 	}
 }

@@ -85,7 +85,7 @@ func verify(ctx context.Context, source *sql.Tx, target *storage.Database, r *re
 	}
 	checks := []struct{ name, query string }{
 		{"foreign keys", `SELECT count(*) FROM pragma_foreign_key_check`},
-		{"content versions", `SELECT count(*) FROM book_contents WHERE version<>1 OR is_current<>1`},
+		{"content versions", `SELECT count(*) FROM book_contents bc JOIN books b ON b.id=bc.book_id WHERE bc.version<>1 OR bc.is_current<>b.has_content OR (bc.file_id IS NOT NULL)<>b.has_content`},
 		{"chapter versions", `SELECT count(*) FROM chapters WHERE content_version<>1`},
 		{"vote baselines", `SELECT count(*) FROM votes WHERE imported_type IS NOT type`},
 		{"progress references", `SELECT count(*) FROM reading_progress p WHERE NOT EXISTS (SELECT 1 FROM chapters c WHERE c.book_id=p.book_id AND c.content_version=1 AND c.idx=p.chapter_idx)`},

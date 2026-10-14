@@ -231,10 +231,16 @@ func (m *Manager) confirm(ctx context.Context, j Job) (Preview, error) {
 		return p, err
 	}
 	fileID, _ := r.LastInsertId()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO book_contents VALUES(?,1,?,1)`, p.BookID, fileID); err != nil {
+	// Missing-body legacy books may retain an unavailable index at version 1.
+	// Keep that index for audit and publish the supplied file as a new version.
+	var version int64
+	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(max(version),0)+1 FROM book_contents WHERE book_id=?`, p.BookID).Scan(&version); err != nil {
 		return p, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO chapters(book_id,content_version,idx,title,start_offset,end_offset) SELECT ?,1,idx,title,start_offset,end_offset FROM job_chapters WHERE job_id=? ORDER BY idx`, p.BookID, j.ID); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO book_contents VALUES(?,?,?,1)`, p.BookID, version, fileID); err != nil {
+		return p, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO chapters(book_id,content_version,idx,title,start_offset,end_offset) SELECT ?,?,idx,title,start_offset,end_offset FROM job_chapters WHERE job_id=? ORDER BY idx`, p.BookID, version, j.ID); err != nil {
 		return p, err
 	}
 	if p.Source != nil {

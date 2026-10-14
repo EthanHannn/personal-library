@@ -17,7 +17,7 @@ const MaxBlockBytes = 256 * 1024
 
 // DecoderVersion participates in API content versions whenever decoding rules
 // change, even when the original file's bytes and timestamps remain unchanged.
-const DecoderVersion = "text-v1-legacy-icu78"
+const DecoderVersion = "text-v2-legacy-icu78-utf16"
 
 var (
 	ErrPath     = errors.New("invalid novel path")
@@ -112,7 +112,7 @@ func cleanPath(name string) (string, error) {
 // Inspect captures metadata only. Encoding must be chosen during import, after
 // inspecting the entire source or by an explicit user decision.
 func (r *Reader) Inspect(name, encoding string) (File, error) {
-	if encoding != "utf-8" && encoding != "gb18030" {
+	if !SupportedEncoding(encoding) {
 		return File{}, ErrEncoding
 	}
 	name, err := cleanPath(name)
@@ -144,6 +144,9 @@ func (r *Reader) Read(ctx context.Context, ref File, start, end, offset int64, l
 	if start < 0 || start >= end || end > ref.Size || offset < start || offset >= end || limit < 4 || limit > MaxBlockBytes {
 		return Block{}, ErrRange
 	}
+	if (ref.Encoding == "utf-16le" || ref.Encoding == "utf-16be") && (start%2 != 0 || end%2 != 0 || offset%2 != 0) {
+		return Block{}, ErrEncoding
+	}
 	if err := ctx.Err(); err != nil {
 		return Block{}, err
 	}
@@ -173,7 +176,7 @@ func (r *Reader) Read(ctx context.Context, ref File, start, end, offset int64, l
 		return Block{}, ErrChanged
 	}
 
-	// Four lookahead bytes cover UTF-8 and GB18030 code points and an initial BOM.
+	// Four lookahead bytes cover all supported code points and an initial BOM.
 	want := min(int64(limit+4), end-offset)
 	raw := make([]byte, int(want))
 	n, err := f.ReadAt(raw, offset)
@@ -219,6 +222,8 @@ func decode(raw []byte, encoding string, limit int, first, final bool) (string, 
 	}
 	src := raw[skip:]
 	switch encoding {
+	case "utf-16le", "utf-16be":
+		return decodeUTF16(raw, encoding == "utf-16le", limit, first, final)
 	case "utf-8":
 		n := 0
 		for n < len(src) && n < limit {

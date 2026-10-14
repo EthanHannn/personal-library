@@ -67,7 +67,7 @@ func New(s *legacy.Store, r *reader.Reader, m Manifest) (*App, error) {
 		return nil, fmt.Errorf("invalid file manifest")
 	}
 	for _, f := range m.Files {
-		if f.Path == "" || f.Size < 0 || (f.Encoding != "utf-8" && f.Encoding != "gb18030") {
+		if f.Path == "" || f.Size < 0 || !reader.SupportedEncoding(f.Encoding) {
 			return nil, fmt.Errorf("invalid file metadata")
 		}
 		f.Path = strings.ReplaceAll(f.Path, "\\", "/")

@@ -13,14 +13,16 @@ type Problem struct {
 }
 
 type Verification struct {
-	Complete      bool      `json:"complete"`
-	Books         int64     `json:"books"`
-	ReadableBooks int64     `json:"readableBooks"`
-	Chapters      int64     `json:"chapters"`
-	Problems      int64     `json:"problemCount"`
-	Examples      []Problem `json:"examples"`
-	QuickCheck    string    `json:"quickCheck"`
-	SQLiteVersion string    `json:"sqliteVersion"`
+	Complete            bool      `json:"complete"`
+	Books               int64     `json:"books"`
+	ReadableBooks       int64     `json:"readableBooks"`
+	Chapters            int64     `json:"chapters"`
+	UnavailableBooks    int64     `json:"unavailableBooks"`
+	UnavailableChapters int64     `json:"unavailableChapters"`
+	Problems            int64     `json:"problemCount"`
+	Examples            []Problem `json:"examples"`
+	QuickCheck          string    `json:"quickCheck"`
+	SQLiteVersion       string    `json:"sqliteVersion"`
 }
 
 // Verify scans chapters using a bounded cursor. fileSize validates the captured
@@ -77,10 +79,14 @@ FROM chapters c LEFT JOIN books b ON b.id=c.bookId ORDER BY c.bookId,c.idx`)
 			seen, validFile = true, false
 			if !bookID.Valid {
 				add("orphan_chapter", book, idx)
-			} else if hasContent.Int64 != 1 {
+			} else if hasContent.Int64 != 0 && hasContent.Int64 != 1 {
 				add("content_flag_mismatch", book, 0)
 			}
-			if !path.Valid || path.String == "" {
+			if bookID.Valid && hasContent.Int64 == 0 {
+				// Metadata-only indexes are retained even though their TXT was
+				// never uploaded. File-size verification applies to readable books.
+				report.UnavailableBooks++
+			} else if !path.Valid || path.String == "" {
 				add("missing_file_reference", book, 0)
 			} else {
 				size, err = fileSize(path.String)
@@ -92,6 +98,9 @@ FROM chapters c LEFT JOIN books b ON b.id=c.bookId ORDER BY c.bookId,c.idx`)
 			}
 		}
 		actual++
+		if bookID.Valid && hasContent.Int64 == 0 {
+			report.UnavailableChapters++
+		}
 		if idx != previousIdx+1 {
 			add("chapter_sequence", book, idx)
 		}
@@ -108,7 +117,7 @@ FROM chapters c LEFT JOIN books b ON b.id=c.bookId ORDER BY c.bookId,c.idx`)
 	}
 	rows.Close()
 	finish()
-	missing, err := s.db.QueryContext(ctx, `SELECT b.id FROM books b WHERE b.hasContent=1 AND NOT EXISTS (SELECT 1 FROM chapters c WHERE c.bookId=b.id)`)
+	missing, err := s.db.QueryContext(ctx, `SELECT b.id FROM books b WHERE (b.hasContent=1 OR b.chapterCount>0) AND NOT EXISTS (SELECT 1 FROM chapters c WHERE c.bookId=b.id)`)
 	if err != nil {
 		return report, err
 	}

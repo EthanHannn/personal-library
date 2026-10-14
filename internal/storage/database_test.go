@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -214,5 +215,80 @@ INSERT INTO job_chapters VALUES('old',1,'第一章',0,100);`); err != nil {
 	defer rows.Close()
 	if rows.Next() {
 		t.Fatal("broken foreign keys")
+	}
+}
+
+func TestUpgradeV4FileEncodingAndFailedMigrationRollback(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(fmt.Sprint(corrupt), func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "v4.db")
+			db, err := Connect(ctx, path, "rwc", 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL) STRICT`); err != nil {
+				t.Fatal(err)
+			}
+			for version := 1; version <= 4; version++ {
+				raw, checksum, err := migration(version)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(string(raw)); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`INSERT INTO schema_migrations VALUES(?,?,0)`, version, checksum); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.Exec(`INSERT INTO books VALUES(1,'书','作者','','','','','APPROVED',NULL,NULL,NULL,1,1,1,0,0);
+INSERT INTO files VALUES(7,'original.txt','gb18030',100,456,printf('%064d',0));
+INSERT INTO book_contents VALUES(1,1,7,1);
+INSERT INTO chapters VALUES(42,1,1,1,'原章名',0,100);`); err != nil {
+				t.Fatal(err)
+			}
+			if corrupt {
+				if _, err := db.Exec(`PRAGMA foreign_keys=OFF; UPDATE book_contents SET file_id=999`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			db.Close()
+			err = Migrate(ctx, path)
+			if corrupt {
+				if err == nil {
+					t.Fatal("invalid foreign key accepted")
+				}
+				db, err := Connect(ctx, path, "ro", 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				var version, files int
+				if err := db.QueryRow(`SELECT max(version),(SELECT count(*) FROM files) FROM schema_migrations`).Scan(&version, &files); err != nil || version != 4 || files != 1 {
+					t.Fatal("failed migration did not roll back", version, files, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			upgraded, err := Open(ctx, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer upgraded.Close()
+			var title, encoding string
+			var id, size, stamp int64
+			if err := upgraded.Read.QueryRow(`SELECT c.id,c.title,f.encoding,f.size,f.modified_ns FROM chapters c JOIN book_contents bc ON bc.book_id=c.book_id JOIN files f ON f.id=bc.file_id`).Scan(&id, &title, &encoding, &size, &stamp); err != nil || id != 42 || title != "原章名" || encoding != "gb18030" || size != 100 || stamp != 456 {
+				t.Fatal("original file or chapter changed", err)
+			}
+			if _, err := upgraded.Write.Exec(`INSERT INTO files VALUES(8,'utf16.txt','utf-16le',120,789,printf('%064d',0))`); err != nil {
+				t.Fatal("UTF-16 rejected", err)
+			}
+			if _, err := upgraded.Write.Exec(`DELETE FROM files WHERE id=7`); err == nil {
+				t.Fatal("file foreign key lost")
+			}
+		})
 	}
 }

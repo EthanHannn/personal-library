@@ -20,9 +20,9 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-const Version = 4
+const Version = 5
 
-var migrationFiles = []string{"001_library.sql", "002_reading.sql", "003_management.sql", "004_sources.sql"}
+var migrationFiles = []string{"001_library.sql", "002_reading.sql", "003_management.sql", "004_sources.sql", "005_legacy_content.sql"}
 
 type Database struct {
 	Read  *sql.DB
@@ -108,7 +108,19 @@ func Migrate(ctx context.Context, filename string) error {
 		return err
 	}
 	defer db.Close()
-	tx, err := db.BeginTx(ctx, nil)
+	// SQLite's table-rebuild procedure requires FK enforcement disabled before
+	// the transaction. Pin this private migration connection; check every FK
+	// before commit, then restore enforcement. Service connections always use FK=1.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		return err
+	}
+	defer conn.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -139,11 +151,18 @@ func Migrate(ctx context.Context, filename string) error {
 			return err
 		}
 	}
+	var broken int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pragma_foreign_key_check`).Scan(&broken); err != nil {
+		return err
+	}
+	if broken != 0 {
+		return fmt.Errorf("migration would leave %d invalid foreign keys", broken)
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	var journal string
-	if err := db.QueryRowContext(ctx, `PRAGMA journal_mode=WAL`).Scan(&journal); err != nil {
+	if err := conn.QueryRowContext(ctx, `PRAGMA journal_mode=WAL`).Scan(&journal); err != nil {
 		return err
 	}
 	if journal != "wal" {

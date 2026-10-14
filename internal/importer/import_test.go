@@ -160,6 +160,73 @@ func TestResumablePersonalDataMigration(t *testing.T) {
 	}
 }
 
+func TestUTF16MigrationPreservesChapterOffsets(t *testing.T) {
+	ctx := context.Background()
+	o := fixture(t, "")
+	raw := []byte{0xff, 0xfe, 0x32, 0x75, 0x59, 0x4e, 0x19, 0x4e, 0x01, 0x4e, 0x0a, 0x62}
+	if err := os.WriteFile(filepath.Join(o.Novels, "中文", "书.txt"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := reader.Open(o.Novels, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	o.Files[0], err = r.Inspect("中文/书.txt", "utf-16le")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Import(ctx, o)
+	if err != nil || !result.Complete || len(result.Tables) != len(mappings) {
+		t.Fatal("UTF-16 import", err)
+	}
+	db, err := storage.Open(ctx, o.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repository := storage.NewRepository(db)
+	for idx, want := range []string{"甲乙", "丙丁戊"} {
+		_, chapter, file, err := repository.Chapter(ctx, 42, int64(idx+1))
+		if err != nil || chapter.Start != int64(idx*6) || chapter.End != int64((idx+1)*6) {
+			t.Fatal("chapter offsets changed", chapter, err)
+		}
+		block, err := r.Read(ctx, file, chapter.Start, chapter.End, chapter.Start, 100)
+		if err != nil || block.Text != want {
+			t.Fatal("UTF-16 chapter differs", block, err)
+		}
+	}
+}
+
+func TestUnavailableLegacyIndexIsPreservedWithoutEnablingReads(t *testing.T) {
+	ctx := context.Background()
+	o := fixture(t, `UPDATE books SET hasContent=0,filePath='not-uploaded.txt' WHERE id=42;
+INSERT INTO reading_progress VALUES('unavailable-progress','historical-reader',42,2,0.4,1791849600000);`)
+	result, err := Import(ctx, o)
+	if err != nil || !result.Complete || result.Legacy.UnavailableBooks != 1 || result.Legacy.UnavailableChapters != 2 || result.Legacy.Problems != 0 {
+		t.Fatalf("unavailable index was lost or treated as corrupt: %+v %v", result.Legacy, err)
+	}
+	db, err := storage.Open(ctx, o.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.Read.QueryRow(`SELECT count(*) FROM chapters c JOIN book_contents bc ON bc.book_id=c.book_id AND bc.version=c.content_version WHERE c.book_id=42 AND bc.file_id IS NULL AND bc.is_current=0`).Scan(&count); err != nil || count != 2 {
+		t.Fatal("historical chapters missing", count, err)
+	}
+	if err := db.Read.QueryRow(`SELECT count(*) FROM reading_progress WHERE id='unavailable-progress' AND chapter_idx=2 AND percent=0.4`).Scan(&count); err != nil || count != 1 {
+		t.Fatal("historical progress missing", err)
+	}
+	repository := storage.NewRepository(db)
+	if _, err := repository.Book(ctx, 42); err == nil {
+		t.Fatal("unavailable book became readable")
+	}
+	if chapters, err := repository.Chapters(ctx, 42, 0, 100); err != nil || len(chapters) != 0 {
+		t.Fatal("archived index became current", chapters, err)
+	}
+}
+
 func TestInvalidSourcesNeverBecomeReady(t *testing.T) {
 	for name, sql := range map[string]string{
 		"orphan reader":          `UPDATE reading_progress SET userId='missing';`,

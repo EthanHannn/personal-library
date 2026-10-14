@@ -152,7 +152,10 @@ func TestChangedFileAndBackfillPreserveHistory(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte("第一章 初始\n原始正文\n")
 	file(t, base, "novel.txt", raw)
-	if _, err := m.DB.Write.Exec(`INSERT INTO books VALUES(42,'书','作者','主类','副类','','简介','APPROVED',NULL,NULL,NULL,0,0,0,0,10);INSERT INTO rating_snapshots VALUES(42,100,850,8.5,50,25,20,3,2)`); err != nil {
+	if _, err := m.DB.Write.Exec(`INSERT INTO books VALUES(42,'书','作者','主类','副类','','简介','APPROVED',NULL,NULL,'not-uploaded.txt',1,0,0,0,10);
+INSERT INTO rating_snapshots VALUES(42,100,850,8.5,50,25,20,3,2);
+INSERT INTO book_contents VALUES(42,1,NULL,0);
+INSERT INTO chapters VALUES(7000,42,1,1,'旧目录',0,1000);`); err != nil {
 		t.Fatal(err)
 	}
 	j := enqueue(t, m, "import", Input{Metadata: Metadata{Title: "书", Author: "作者"}, Path: "novel.txt", Encoding: "utf-8", BookID: 42})
@@ -182,6 +185,14 @@ func TestChangedFileAndBackfillPreserveHistory(t *testing.T) {
 	m.DB.Read.QueryRow(`SELECT has_content,score FROM books JOIN rating_snapshots ON book_id=id WHERE id=42`).Scan(&has, &score)
 	if has != 1 || score != 8.5 {
 		t.Fatal("backfill changed score", has, score)
+	}
+	var archived, current int
+	if err := m.DB.Read.QueryRow(`SELECT (SELECT count(*) FROM chapters WHERE id=7000 AND content_version=1 AND title='旧目录'),(SELECT version FROM book_contents WHERE book_id=42 AND is_current=1)`).Scan(&archived, &current); err != nil || archived != 1 || current != 2 {
+		t.Fatal("backfill overwrote the unavailable index", archived, current, err)
+	}
+	_, chapter, _, err := storage.NewRepository(m.DB).Chapter(ctx, 42, 1)
+	if err != nil || chapter.Title == "旧目录" {
+		t.Fatal("backfill did not publish the new index", chapter, err)
 	}
 }
 
