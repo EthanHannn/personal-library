@@ -1,4 +1,11 @@
-import type { ContentBlock, Position, ReadingState } from '../api'
+import type { ContentBlock, Position, ReadingState, VoteSummary, VoteType } from '../api'
+
+export function voting(myVote: VoteType | null = null, bookId = 42): VoteSummary {
+  const source = { score: 8.5, popularity: 2, totalScore: 17, counts: { XIANCAO: 1, LIANGCAO: 1, GANCAO: 0, KUCAO: 0, DUCAO: 0 } }
+  const counts = { ...source.counts }
+  if (myVote) counts[myVote]++
+  return { bookId, myVote, source, current: { ...source, counts, popularity: myVote ? 3 : 2 } }
+}
 
 export function content(chapter = 1, text = '第一章\n这是正文😀。'): ContentBlock {
   return { book: { id: 42, title: '测试小说', author: '测试作者', chapterCount: 3 }, chapter: { idx: chapter, title: `第 ${chapter} 章` }, text, contentVersion: 'v'.repeat(64), blockToken: `block-${chapter}`, nextCursor: null, blockStart: 0, blockEnd: 40, chapterStart: 0, chapterEnd: 40 }

@@ -3,7 +3,7 @@ import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { expect, it, vi } from 'vitest'
 import type { Book, CollectionPage } from '../../api'
-import { response } from '../../test/fixtures'
+import { response, voting } from '../../test/fixtures'
 import BookshelfBrowser from './BookshelfBrowser.vue'
 import BookDetail from '../book/BookDetail.vue'
 
@@ -55,7 +55,7 @@ it('keeps a failed removal visible, retries DELETE and preserves the separate re
 it('can collect an unread book without text and never creates progress on its behalf', async () => {
   const fetch = vi.fn(async (_path: string, options?: RequestInit) => options?.method === 'PUT'
     ? response({ inShelf: true })
-    : response({ book: { ...book, hasContent: false, chapterCount: 0 }, inShelf: false, progress: null }))
+    : response({ book: { ...book, hasContent: false, chapterCount: 0 }, inShelf: false, progress: null, vote: voting() }))
   vi.stubGlobal('fetch', fetch)
   const { wrapper } = await render('/book/42')
   try {
