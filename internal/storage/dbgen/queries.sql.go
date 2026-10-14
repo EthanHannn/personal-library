@@ -35,13 +35,15 @@ func (q *Queries) AddToShelf(ctx context.Context, arg AddToShelfParams) error {
 }
 
 const bookDetail = `-- name: BookDetail :one
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score, b.intro
 FROM books b JOIN rating_snapshots s ON s.book_id = b.id
 WHERE b.id = ? AND b.status = 'APPROVED'
 `
 
 type BookDetailRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -58,6 +60,7 @@ func (q *Queries) BookDetail(ctx context.Context, id int64) (BookDetailRow, erro
 	row := q.db.QueryRowContext(ctx, bookDetail, id)
 	var i BookDetailRow
 	err := row.Scan(
+		&i.HasCover,
 		&i.ID,
 		&i.Title,
 		&i.Author,
@@ -109,7 +112,8 @@ func (q *Queries) CatalogCategories(ctx context.Context) ([]CatalogCategoriesRow
 
 const catalogPage = `-- name: CatalogPage :many
 WITH ordering AS (SELECT CAST(?13 AS TEXT) AS kind)
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score, s.popularity, s.xiancao_count
 FROM books b JOIN rating_snapshots s ON s.book_id=b.id CROSS JOIN ordering
 WHERE b.status='APPROVED'
@@ -148,6 +152,7 @@ type CatalogPageParams struct {
 }
 
 type CatalogPageRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -187,6 +192,7 @@ func (q *Queries) CatalogPage(ctx context.Context, arg CatalogPageParams) ([]Cat
 	for rows.Next() {
 		var i CatalogPageRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -346,7 +352,8 @@ func (q *Queries) CurrentReader(ctx context.Context, portalUser sql.NullString) 
 }
 
 const featuredCandidates = `-- name: FeaturedCandidates :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score, r.xiancao_count, substr(b.intro,1,180) AS intro
 FROM rating_snapshots r JOIN books b ON b.id=r.book_id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
@@ -354,6 +361,7 @@ ORDER BY r.xiancao_count DESC, r.score DESC, b.id DESC LIMIT 30
 `
 
 type FeaturedCandidatesRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -377,6 +385,7 @@ func (q *Queries) FeaturedCandidates(ctx context.Context) ([]FeaturedCandidatesR
 	for rows.Next() {
 		var i FeaturedCandidatesRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -403,7 +412,8 @@ func (q *Queries) FeaturedCandidates(ctx context.Context) ([]FeaturedCandidatesR
 }
 
 const highRatedBooks = `-- name: HighRatedBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score
 FROM rating_snapshots r JOIN books b ON b.id=r.book_id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
@@ -411,6 +421,7 @@ ORDER BY r.score DESC, b.id DESC LIMIT 6
 `
 
 type HighRatedBooksRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -432,6 +443,7 @@ func (q *Queries) HighRatedBooks(ctx context.Context) ([]HighRatedBooksRow, erro
 	for rows.Next() {
 		var i HighRatedBooksRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -498,7 +510,8 @@ func (q *Queries) InShelf(ctx context.Context, arg InShelfParams) (int64, error)
 }
 
 const latestBooks = `-- name: LatestBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score
 FROM books b JOIN rating_snapshots r ON r.book_id=b.id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
@@ -506,6 +519,7 @@ ORDER BY b.created_at DESC, b.id DESC LIMIT 6
 `
 
 type LatestBooksRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -527,6 +541,7 @@ func (q *Queries) LatestBooks(ctx context.Context) ([]LatestBooksRow, error) {
 	for rows.Next() {
 		var i LatestBooksRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -551,7 +566,8 @@ func (q *Queries) LatestBooks(ctx context.Context) ([]LatestBooksRow, error) {
 }
 
 const listBooks = `-- name: ListBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score
 FROM books b JOIN rating_snapshots s ON s.book_id = b.id
 WHERE b.status = 'APPROVED' AND b.id > ?1
@@ -564,6 +580,7 @@ type ListBooksParams struct {
 }
 
 type ListBooksRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -585,6 +602,7 @@ func (q *Queries) ListBooks(ctx context.Context, arg ListBooksParams) ([]ListBoo
 	for rows.Next() {
 		var i ListBooksRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -609,7 +627,8 @@ func (q *Queries) ListBooks(ctx context.Context, arg ListBooksParams) ([]ListBoo
 }
 
 const personalVoteWindow = `-- name: PersonalVoteWindow :many
-SELECT v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
 FROM votes v JOIN books b ON b.id=v.book_id JOIN rating_snapshots s ON s.book_id=b.id
 WHERE v.reader_id=?1 AND b.status='APPROVED'
  AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')
@@ -628,6 +647,7 @@ type PersonalVoteWindowParams struct {
 }
 
 type PersonalVoteWindowRow struct {
+	HasCover     int64
 	EntryID      string
 	Type         string
 	CreatedAt    int64
@@ -659,6 +679,7 @@ func (q *Queries) PersonalVoteWindow(ctx context.Context, arg PersonalVoteWindow
 	for rows.Next() {
 		var i PersonalVoteWindowRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.EntryID,
 			&i.Type,
 			&i.CreatedAt,
@@ -921,7 +942,8 @@ func (q *Queries) ReadingProgress(ctx context.Context, arg ReadingProgressParams
 }
 
 const readingWindow = `-- name: ReadingWindow :many
-SELECT p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
        b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count, b.has_content, r.score,
        CAST(EXISTS(SELECT 1 FROM shelf_entries s WHERE s.book_id=b.id AND s.reader_id=p.reader_id) AS INTEGER) AS in_shelf
 FROM reading_progress p JOIN books b ON b.id=p.book_id
@@ -941,6 +963,7 @@ type ReadingWindowParams struct {
 }
 
 type ReadingWindowRow struct {
+	HasCover     int64
 	EntryID      string
 	UpdatedAt    int64
 	ChapterIdx   int64
@@ -973,6 +996,7 @@ func (q *Queries) ReadingWindow(ctx context.Context, arg ReadingWindowParams) ([
 	for rows.Next() {
 		var i ReadingWindowRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.EntryID,
 			&i.UpdatedAt,
 			&i.ChapterIdx,
@@ -1002,7 +1026,8 @@ func (q *Queries) ReadingWindow(ctx context.Context, arg ReadingWindowParams) ([
 }
 
 const relatedBooks = `-- name: RelatedBooks :many
-SELECT b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
  CAST(CASE WHEN ?1<>'' AND b.author=?1 THEN 2 ELSE 1 END AS INTEGER) AS relevance,
  CAST(CASE WHEN ?2>0 AND b.word_count>0 THEN abs(1.0*b.word_count/?2-1) ELSE 100 END AS REAL) AS distance
 FROM books b JOIN rating_snapshots s ON s.book_id=b.id
@@ -1025,6 +1050,7 @@ type RelatedBooksParams struct {
 }
 
 type RelatedBooksRow struct {
+	HasCover     int64
 	ID           int64
 	Title        string
 	Author       string
@@ -1058,6 +1084,7 @@ func (q *Queries) RelatedBooks(ctx context.Context, arg RelatedBooksParams) ([]R
 	for rows.Next() {
 		var i RelatedBooksRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.ID,
 			&i.Title,
 			&i.Author,
@@ -1253,7 +1280,8 @@ func (q *Queries) SetVote(ctx context.Context, arg SetVoteParams) error {
 }
 
 const shelfWindow = `-- name: ShelfWindow :many
-SELECT s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
        b.word_count, b.chapter_count, b.has_content, r.score,
        CAST(coalesce(p.chapter_idx,0) AS INTEGER) AS progress_chapter,
        CAST(coalesce(p.percent,0) AS REAL) AS progress_percent,
@@ -1276,6 +1304,7 @@ type ShelfWindowParams struct {
 }
 
 type ShelfWindowRow struct {
+	HasCover        int64
 	EntryID         string
 	AddedAt         int64
 	ID              int64
@@ -1310,6 +1339,7 @@ func (q *Queries) ShelfWindow(ctx context.Context, arg ShelfWindowParams) ([]She
 	for rows.Next() {
 		var i ShelfWindowRow
 		if err := rows.Scan(
+			&i.HasCover,
 			&i.EntryID,
 			&i.AddedAt,
 			&i.ID,

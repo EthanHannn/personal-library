@@ -77,7 +77,7 @@ func (a profileAPI) votes(w http.ResponseWriter, r *http.Request) {
 		next = nextCollectionCursor("votes:"+kind, last.CreatedAt, last.EntryID)
 	}
 	for _, b := range rows {
-		entries = append(entries, entry{Book: Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Type: b.Type, CreatedAt: b.CreatedAt})
+		entries = append(entries, entry{Book: Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Type: b.Type, CreatedAt: b.CreatedAt})
 	}
 	jsonResponse(w, map[string]any{"entries": entries, "nextCursor": next})
 }
@@ -108,7 +108,7 @@ func (a profileAPI) related(w http.ResponseWriter, r *http.Request) {
 		if b.Relevance == 2 {
 			reason = "同一作者"
 		}
-		entries = append(entries, related{Book: Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Reason: reason})
+		entries = append(entries, related{Book: Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Reason: reason})
 	}
 	jsonResponse(w, map[string]any{"entries": entries})
 }

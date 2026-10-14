@@ -28,7 +28,7 @@ http.createServer((req, res) => {
       let next = '/'
       try {
         const requested = new URL(raw, origin)
-        if (requested.origin === origin && /^\/(?:library|bookshelf|book\/\d+|read\/\d+|(?:category|author)\/[^/]+)?$/.test(requested.pathname)) next = requested.pathname + requested.search
+        if (requested.origin === origin && /^\/(?:library|bookshelf|profile|manage|book\/\d+|read\/\d+|(?:category|author)\/[^/]+)?$/.test(requested.pathname)) next = requested.pathname + requested.search
       } catch { /* Keep a fixed same-origin fallback for malformed return URLs. */ }
       if (req.method === 'POST') {
         res.writeHead(303, { 'Set-Cookie': 'test-session=valid; Path=/; SameSite=Strict; HttpOnly', Location: next }); return res.end()

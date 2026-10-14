@@ -1,5 +1,5 @@
 # Build web/ then the static Go binary with -tags release on a workstation/CI.
-FROM scratch
+FROM gcr.io/distroless/static-debian12:nonroot
 ARG VCS_REF=development
 LABEL org.opencontainers.image.source="https://github.com/EthanHannn/personal-library"
 LABEL org.opencontainers.image.revision=$VCS_REF

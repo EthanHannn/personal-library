@@ -37,7 +37,7 @@ func newStatic(assets fs.FS) (http.Handler, error) {
 		}
 		// A closed route list prevents missing API, cover, and asset requests
 		// from succeeding with index.html. All of this sits inside gateway.Wrap.
-		if url == "/" || url == "/library" || url == "/bookshelf" || url == "/profile" || pageID(url, "/book/") || pageID(url, "/read/") || catalogPage(r.URL.EscapedPath()) {
+		if url == "/" || url == "/library" || url == "/bookshelf" || url == "/profile" || url == "/manage" || pageID(url, "/book/") || pageID(url, "/read/") || catalogPage(r.URL.EscapedPath()) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 			w.Header().Set("Referrer-Policy", "same-origin")

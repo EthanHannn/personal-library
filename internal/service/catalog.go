@@ -58,7 +58,7 @@ func (a catalogAPI) books(w http.ResponseWriter, r *http.Request) {
 	}
 	books := make([]catalogBook, 0, len(result.Books))
 	for _, b := range result.Books {
-		books = append(books, catalogBook{Book: Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Popularity: b.Popularity, XiancaoCount: b.XiancaoCount})
+		books = append(books, catalogBook{Book: Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, Popularity: b.Popularity, XiancaoCount: b.XiancaoCount})
 	}
 	jsonResponse(w, map[string]any{"books": books, "pagination": map[string]int64{"page": result.Page, "limit": p.Limit, "total": result.Stats.Total, "totalPages": result.TotalPages}, "summary": map[string]int64{"authors": result.Stats.Authors, "readable": result.Stats.Readable}})
 }
@@ -183,7 +183,7 @@ func (a catalogAPI) window(w http.ResponseWriter, r *http.Request, v url.Values)
 	}
 	books := make([]Book, 0, len(rows))
 	for _, b := range rows {
-		books = append(books, Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
+		books = append(books, Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
 	}
 	jsonResponse(w, map[string]any{"books": books, "nextAfter": next})
 }

@@ -44,11 +44,12 @@ type Block struct {
 }
 
 type Reader struct {
-	root  *os.Root
-	slots chan struct{}
+	root    *os.Root
+	managed *os.Root
+	slots   chan struct{}
 }
 
-func Open(root string, concurrency int) (*Reader, error) {
+func Open(root string, concurrency int, managed ...string) (*Reader, error) {
 	if concurrency < 1 || concurrency > 16 {
 		return nil, fmt.Errorf("reader concurrency must be between 1 and 16")
 	}
@@ -56,10 +57,49 @@ func Open(root string, concurrency int) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Reader{root: r, slots: make(chan struct{}, concurrency)}, nil
+	result := &Reader{root: r, slots: make(chan struct{}, concurrency)}
+	if len(managed) > 0 && managed[0] != "" {
+		result.managed, err = os.OpenRoot(managed[0])
+		if err != nil {
+			r.Close()
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
-func (r *Reader) Close() error { return r.root.Close() }
+func (r *Reader) Close() error {
+	if r.managed != nil {
+		defer r.managed.Close()
+	}
+	return r.root.Close()
+}
+
+// Collected files use a reserved virtual directory; original novels stay read-only.
+func (r *Reader) source(name string) (*os.Root, string, error) {
+	name, err := cleanPath(name)
+	if err != nil {
+		return nil, "", err
+	}
+	if strings.HasPrefix(name, "_collected/") && r.managed != nil {
+		return r.managed, strings.TrimPrefix(name, "_collected/"), nil
+	}
+	return r.root, name, nil
+}
+
+func (r *Reader) OpenSource(name string) (*os.File, error) {
+	root, relative, err := r.source(name)
+	if err != nil {
+		return nil, err
+	}
+	return root.Open(relative)
+}
+
+// DecodeLine shares the reader's encoding rules with the streaming indexer.
+func DecodeLine(raw []byte, encoding string) (string, error) {
+	text, _, err := decode(raw, encoding, len(raw)*4+4, true, true)
+	return text, err
+}
 
 func cleanPath(name string) (string, error) {
 	name = strings.ReplaceAll(name, "\\", "/")
@@ -79,7 +119,7 @@ func (r *Reader) Inspect(name, encoding string) (File, error) {
 	if err != nil {
 		return File{}, err
 	}
-	f, err := r.root.Open(name)
+	f, err := r.OpenSource(name)
 	if err != nil {
 		return File{}, fmt.Errorf("%w: %w", ErrPath, err)
 	}
@@ -117,7 +157,7 @@ func (r *Reader) Read(ctx context.Context, ref File, start, end, offset int64, l
 	if err != nil {
 		return Block{}, err
 	}
-	f, err := r.root.Open(name)
+	f, err := r.OpenSource(name)
 	if err != nil {
 		return Block{}, fmt.Errorf("%w: %w", ErrPath, err)
 	}

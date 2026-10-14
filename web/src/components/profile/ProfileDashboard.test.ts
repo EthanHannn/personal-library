@@ -19,7 +19,7 @@ it('shows personal records and keeps a filter in the URL while applying local re
   const { wrapper, router } = await render()
   try {
     await vi.waitFor(() => expect(wrapper.text()).toContain('我的藏书'))
-    expect(wrapper.get('a[href="/book/42"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/book/42"]').exists()).toBe(true)
     await wrapper.get('select').setValue('KUCAO')
     await vi.waitFor(() => expect(wrapper.text()).toContain('还没有这一档评价'))
     expect(router.currentRoute.value.query.type).toBe('KUCAO')

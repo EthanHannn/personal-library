@@ -19,7 +19,7 @@ const { preferences, warning, update, style } = useReaderPreferences()
     <ContinueReading :entries="data.reading" />
     <PersonalVotes />
     <section class="profile-preferences" aria-labelledby="preferences-title"><h2 id="preferences-title">阅读设置</h2><p class="muted">保存在当前浏览器，下次打开阅读器时生效。</p><div :style="style"><ReaderSettings :preferences="preferences" :warning="warning" @update="update" /></div></section>
-    <p class="account-settings"><a :href="data.accountUrl">门户账户设置 →</a><span class="muted">登录与安全设置由门户管理。</span></p>
+    <p class="account-settings"><RouterLink to="/manage">书库管理 →</RouterLink><a :href="data.accountUrl">门户账户设置 →</a><span class="muted">登录与安全设置由门户管理。</span></p>
   </template>
 </template>
 

@@ -11,7 +11,7 @@ const date = (at: number) => new Date(at).toLocaleDateString('zh-CN')
 <template>
   <ul class="collection-list">
     <li v-for="entry in entries" :key="entry.book.id" class="collection-card">
-      <div class="collection-cover"><BookCover :title="entry.book.title" /></div>
+      <div class="collection-cover"><BookCover :title="entry.book.title" :src="entry.book.coverUrl" /></div>
       <div class="collection-info">
         <p class="collection-category">{{ entry.book.tag1 }}<template v-if="entry.book.tag2"> · {{ entry.book.tag2 }}</template></p>
         <h2 class="collection-title"><RouterLink :to="`/book/${entry.book.id}`">{{ entry.book.title }}</RouterLink></h2>

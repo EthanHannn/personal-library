@@ -17,8 +17,12 @@ func (r *Reader) Fingerprint(ctx context.Context, ref File) (string, error) {
 		return "", err
 	}
 	parent := "."
-	for _, part := range strings.Split(name, "/") {
-		dir, err := r.root.Open(parent)
+	root, relative, err := r.source(name)
+	if err != nil {
+		return "", err
+	}
+	for _, part := range strings.Split(relative, "/") {
+		dir, err := root.Open(parent)
 		if err != nil {
 			return "", fmt.Errorf("%w: %w", ErrPath, err)
 		}
@@ -58,7 +62,7 @@ func (r *Reader) Fingerprint(ctx context.Context, ref File) (string, error) {
 	if observed != expected {
 		return "", ErrChanged
 	}
-	f, err := r.root.Open(name)
+	f, err := r.OpenSource(name)
 	if err != nil {
 		return "", err
 	}

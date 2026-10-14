@@ -18,7 +18,7 @@ function step(delta: number) { selected.value = (selected.value + delta + props.
         <template v-if="book"><h1 class="featured-title">{{ book.title }}</h1><p class="featured-author">{{ book.author }} · {{ book.tag1 }}<template v-if="book.tag2"> / {{ book.tag2 }}</template></p><p class="featured-intro">{{ book.intro || '打开书页，开始一段新的阅读。' }}</p><p class="featured-rating"><strong>{{ book.score.toFixed(1) }}</strong> 分<span>{{ book.xiancaoCount.toLocaleString() }} 张仙草票</span></p><div class="featured-actions"><RouterLink class="button" :to="`/read/${book.id}`">打开阅读</RouterLink><RouterLink class="featured-detail" :to="`/book/${book.id}`">查看书目 →</RouterLink></div></template>
         <template v-else><h1 class="featured-title">知轩书房</h1><p class="featured-intro">从馆藏中挑一本想读的书，或回到自己的书架。</p><RouterLink class="button" to="/library">浏览书库</RouterLink></template>
       </div>
-      <div v-if="book" class="featured-cover"><BookCover :title="book.title" /></div>
+      <div v-if="book" class="featured-cover"><BookCover :title="book.title" :src="book.coverUrl" /></div>
     </div>
     <div class="featured-footer">
       <dl class="featured-stats"><div><dd>{{ stats.books.toLocaleString() }}</dd><dt>部馆藏</dt></div><div><dd>{{ stats.readable.toLocaleString() }}</dd><dt>部可阅读</dt></div><div><dd>{{ stats.authors.toLocaleString() }}</dd><dt>位作者</dt></div></dl>

@@ -10,7 +10,7 @@ defineProps<{ entries: CollectionEntry[] }>()
     <ul v-if="entries.length" class="continue-list">
       <li v-for="entry in entries" :key="entry.book.id">
         <RouterLink class="continue-card" :to="entry.book.hasContent ? `/read/${entry.book.id}` : `/book/${entry.book.id}`">
-          <div class="continue-cover"><BookCover :title="entry.book.title" /></div><div class="continue-copy"><h3>{{ entry.book.title }}</h3><p>{{ entry.book.author }}</p><p class="continue-position">第 {{ entry.progress?.chapterIdx.toLocaleString() }} 章 · 章内 {{ Math.round((entry.progress?.percent ?? 0) * 100) }}%</p><span>{{ entry.book.hasContent ? '继续阅读 →' : '正文暂缺 · 查看书目 →' }}</span></div>
+          <div class="continue-cover"><BookCover :title="entry.book.title" :src="entry.book.coverUrl" /></div><div class="continue-copy"><h3>{{ entry.book.title }}</h3><p>{{ entry.book.author }}</p><p class="continue-position">第 {{ entry.progress?.chapterIdx.toLocaleString() }} 章 · 章内 {{ Math.round((entry.progress?.percent ?? 0) * 100) }}%</p><span>{{ entry.book.hasContent ? '继续阅读 →' : '正文暂缺 · 查看书目 →' }}</span></div>
         </RouterLink>
       </li>
     </ul>

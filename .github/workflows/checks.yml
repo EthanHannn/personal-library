@@ -48,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           python tools/m0/fixture.py --output .local/smoke --books 5 --chapters 128 --large-mib 1
+          python -c "from pathlib import Path; Path('.local/smoke/novels/management-test.txt').write_text('第一章 测试\n合成正文。\n第二章 继续\n第二章合成正文。\n', encoding='utf-8')"
           mkdir -p .local/smoke-target
           bin/library-linux-amd64 migrate --db .local/smoke-target/library.db
           bin/library-linux-amd64 import-legacy --source .local/smoke/library.db --db .local/smoke-target/library.db --novels .local/smoke/novels --manifest .local/smoke/manifest.json --portal-user owner --source-version synthetic-ci
@@ -71,3 +72,10 @@ jobs:
           node tools/m2/smoke.mjs --base http://127.0.0.1:16871 --resume .local/m2-smoke.json
           node tools/m3/smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-smoke.json
           node tools/m3/vote-smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-vote-smoke.json
+          node tools/m3/management-smoke.mjs --base http://127.0.0.1:16871 --out .local/m3-management-smoke.json
+          docker restart library-check
+          for attempt in {1..20}; do
+            if docker exec library-check /library healthcheck; then break; fi
+            sleep 1
+          done
+          node tools/m3/management-smoke.mjs --base http://127.0.0.1:16871 --resume .local/m3-management-smoke.json

@@ -9,6 +9,7 @@ export interface Book {
   hasContent: boolean
   score: number
   intro?: string
+  coverUrl?: string
 }
 
 export interface Identity {
@@ -39,7 +40,7 @@ export interface CollectionPage {
 export type VoteType = 'XIANCAO' | 'LIANGCAO' | 'GANCAO' | 'KUCAO' | 'DUCAO'
 export interface VoteTotals { score: number; popularity: number; totalScore: number; counts: Record<VoteType, number> }
 export interface VoteSummary { bookId: number; myVote: VoteType | null; source: VoteTotals; current: VoteTotals }
-export interface BookState { book: Book; inShelf: boolean; progress: ProgressSummary | null; vote: VoteSummary }
+export interface BookState { book: Book; inShelf: boolean; progress: ProgressSummary | null; vote: VoteSummary; partialContent?: boolean }
 export interface FeaturedBook extends Book { xiancaoCount: number }
 export interface HomeData {
   stats: { books: number; authors: number; categories: number; readable: number }

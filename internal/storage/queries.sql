@@ -23,14 +23,16 @@ ON CONFLICT(reader_id,book_id) DO UPDATE SET type=excluded.type
 WHERE votes.type<>excluded.type;
 
 -- name: ListBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score
 FROM books b JOIN rating_snapshots s ON s.book_id = b.id
 WHERE b.status = 'APPROVED' AND b.id > sqlc.arg(after_id)
 ORDER BY b.id LIMIT sqlc.arg(page_limit);
 
 -- name: BookDetail :one
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score, b.intro
 FROM books b JOIN rating_snapshots s ON s.book_id = b.id
 WHERE b.id = ? AND b.status = 'APPROVED';
@@ -118,7 +120,8 @@ SELECT
 -- The timestamp and immutable entry ID together form the ordering key. Repeated
 -- adds retain both; inserting or deleting another entry does not shift a page.
 -- name: ShelfWindow :many
-SELECT s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
        b.word_count, b.chapter_count, b.has_content, r.score,
        CAST(coalesce(p.chapter_idx,0) AS INTEGER) AS progress_chapter,
        CAST(coalesce(p.percent,0) AS REAL) AS progress_percent,
@@ -132,7 +135,8 @@ WHERE s.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED'
 ORDER BY s.added_at DESC, s.id ASC LIMIT sqlc.arg(page_limit);
 
 -- name: ReadingWindow :many
-SELECT p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+p.id AS entry_id, p.updated_at, p.chapter_idx, p.percent,
        b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count, b.has_content, r.score,
        CAST(EXISTS(SELECT 1 FROM shelf_entries s WHERE s.book_id=b.id AND s.reader_id=p.reader_id) AS INTEGER) AS in_shelf
 FROM reading_progress p JOIN books b ON b.id=p.book_id
@@ -149,21 +153,24 @@ SELECT count(*) AS books, count(DISTINCT author) AS authors,
 FROM books WHERE status='APPROVED';
 
 -- name: FeaturedCandidates :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score, r.xiancao_count, substr(b.intro,1,180) AS intro
 FROM rating_snapshots r JOIN books b ON b.id=r.book_id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
 ORDER BY r.xiancao_count DESC, r.score DESC, b.id DESC LIMIT 30;
 
 -- name: HighRatedBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score
 FROM rating_snapshots r JOIN books b ON b.id=r.book_id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
 ORDER BY r.score DESC, b.id DESC LIMIT 6;
 
 -- name: LatestBooks :many
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, r.score
 FROM books b JOIN rating_snapshots r ON r.book_id=b.id
 WHERE b.status='APPROVED' AND b.has_content=1 AND r.score>=7.5
@@ -190,7 +197,8 @@ WHERE b.status='APPROVED'
 -- when scores, word counts, titles or timestamps tie.
 -- name: CatalogPage :many
 WITH ordering AS (SELECT CAST(sqlc.arg(sort_by) AS TEXT) AS kind)
-SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score, s.popularity, s.xiancao_count
 FROM books b JOIN rating_snapshots s ON s.book_id=b.id CROSS JOIN ordering
 WHERE b.status='APPROVED'
@@ -219,7 +227,8 @@ GROUP BY tag1, tag2 ORDER BY tag1, total DESC, tag2;
 -- Recommendations use local metadata only. Unknown identities cannot create
 -- matches, and absent candidates remain an empty list instead of random books.
 -- name: RelatedBooks :many
-SELECT b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score,
  CAST(CASE WHEN sqlc.arg(author)<>'' AND b.author=sqlc.arg(author) THEN 2 ELSE 1 END AS INTEGER) AS relevance,
  CAST(CASE WHEN sqlc.arg(words)>0 AND b.word_count>0 THEN abs(1.0*b.word_count/sqlc.arg(words)-1) ELSE 100 END AS REAL) AS distance
 FROM books b JOIN rating_snapshots s ON s.book_id=b.id
@@ -237,7 +246,8 @@ SELECT
  (SELECT count(*) FROM votes v JOIN books b ON b.id=v.book_id WHERE v.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED' AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')) AS votes;
 
 -- name: PersonalVoteWindow :many
-SELECT v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
+SELECT        CAST(EXISTS(SELECT 1 FROM cover_assets ca WHERE ca.book_id=b.id) OR EXISTS(SELECT 1 FROM covers cv WHERE cv.book_id=b.id AND cv.legacy_path LIKE '/covers/%' AND (cv.legacy_path LIKE '%.jpg' OR cv.legacy_path LIKE '%.jpeg' OR cv.legacy_path LIKE '%.png' OR cv.legacy_path LIKE '%.webp' OR cv.legacy_path LIKE '%.gif')) AS INTEGER) AS has_cover,
+v.id AS entry_id, v.type, v.created_at, b.id,b.title,b.author,b.tag1,b.tag2,b.word_count,b.chapter_count,b.has_content,s.score
 FROM votes v JOIN books b ON b.id=v.book_id JOIN rating_snapshots s ON s.book_id=b.id
 WHERE v.reader_id=sqlc.arg(reader_id) AND b.status='APPROVED'
  AND v.type IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')

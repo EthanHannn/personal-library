@@ -12,6 +12,7 @@ import (
 
 	"github.com/EthanHannn/personal-library/internal/gateway"
 	"github.com/EthanHannn/personal-library/internal/httpapi"
+	"github.com/EthanHannn/personal-library/internal/management"
 	"github.com/EthanHannn/personal-library/internal/reader"
 	"github.com/EthanHannn/personal-library/internal/storage"
 	"github.com/EthanHannn/personal-library/internal/storage/dbgen"
@@ -19,6 +20,7 @@ import (
 
 type Book struct {
 	ID           int64   `json:"id"`
+	CoverURL     string  `json:"coverUrl,omitempty"`
 	Title        string  `json:"title"`
 	Author       string  `json:"author"`
 	Tag1         string  `json:"tag1"`
@@ -30,7 +32,14 @@ type Book struct {
 	Intro        string  `json:"intro,omitempty"`
 }
 
-func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gateway.Config, assets fs.FS) (http.Handler, error) {
+func coverURL(id, has int64) string {
+	if has == 0 {
+		return ""
+	}
+	return "/api/v1/books/" + strconv.FormatInt(id, 10) + "/cover"
+}
+
+func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gateway.Config, assets fs.FS, managers ...*management.Manager) (http.Handler, error) {
 	if _, err := gateway.Parse(config.User, config.Origin, config.AuthOrigin); err != nil {
 		return nil, err
 	}
@@ -55,6 +64,11 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	manage := manageAPI{store: store}
+	if len(managers) > 0 {
+		manage.jobs = managers[0]
+	}
+	manage.register(mux)
 	reading := readingAPI{store: store, content: api, readerID: user.ID}
 	collections := collectionAPI{store: store, readerID: user.ID}
 	catalog := catalogAPI{store: store}
@@ -114,7 +128,12 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 			apiError(w, err)
 			return
 		}
-		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, "inShelf": inShelf != 0, "progress": progress, "vote": vote})
+		var complete int
+		if err := db.Read.QueryRowContext(r.Context(), `SELECT coalesce((SELECT complete FROM book_sources WHERE book_id=?),1)`, id).Scan(&complete); err != nil {
+			apiError(w, err)
+			return
+		}
+		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, "inShelf": inShelf != 0, "progress": progress, "vote": vote, "partialContent": complete == 0})
 	})
 	mux.Handle("/", static)
 	return api.Handler(config, mux, "library"), nil

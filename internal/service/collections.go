@@ -98,7 +98,7 @@ func (a collectionAPI) page(ctx context.Context, kind string, cursor collectionC
 			page.NextCursor = nextCollectionCursor(kind, last.AddedAt, last.EntryID)
 		}
 		for _, b := range rows {
-			entry := collectionEntry{Book: Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, InShelf: true, AddedAt: &b.AddedAt}
+			entry := collectionEntry{Book: Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score}, InShelf: true, AddedAt: &b.AddedAt}
 			if b.ProgressChapter > 0 {
 				entry.Progress = &progressSummary{ChapterIdx: b.ProgressChapter, Percent: b.ProgressPercent, UpdatedAt: b.ProgressAt}
 			}
@@ -116,7 +116,7 @@ func (a collectionAPI) page(ctx context.Context, kind string, cursor collectionC
 		}
 		for _, b := range rows {
 			page.Entries = append(page.Entries, collectionEntry{
-				Book:    Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score},
+				Book:    Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score},
 				InShelf: b.InShelf != 0, Progress: &progressSummary{ChapterIdx: b.ChapterIdx, Percent: b.Percent, UpdatedAt: b.UpdatedAt},
 			})
 		}
@@ -219,13 +219,13 @@ func (a collectionAPI) home(w http.ResponseWriter, r *http.Request) {
 	// Sample only the bounded top-vote pool; never ORDER BY random() over the library.
 	rand.Shuffle(len(featured), func(i, j int) { featured[i], featured[j] = featured[j], featured[i] })
 	for _, b := range featured[:min(5, len(featured))] {
-		response.Featured = append(response.Featured, featuredBook{Book: Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, XiancaoCount: b.XiancaoCount})
+		response.Featured = append(response.Featured, featuredBook{Book: Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, XiancaoCount: b.XiancaoCount})
 	}
 	for _, b := range high {
-		response.HighRated = append(response.HighRated, Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
+		response.HighRated = append(response.HighRated, Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
 	}
 	for _, b := range latest {
-		response.Latest = append(response.Latest, Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
+		response.Latest = append(response.Latest, Book{ID: b.ID, CoverURL: coverURL(b.ID, b.HasCover), Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score})
 	}
 	jsonResponse(w, response)
 }
