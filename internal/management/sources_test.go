@@ -104,7 +104,9 @@ func TestSourceRulesAndPublicNetworkValidation(t *testing.T) {
 		res.Header.Set("Location", "https://127.0.0.1/private")
 		return res, nil
 	})
-	if _, _, err := m.Remote.SourcePage(ctx, s.snapshot(), "https://example.com/start", nil); err == nil || calls != 1 {
+	// The dial timeout above belongs to that dial only. Slow Windows filesystem
+	// setup must not expire the context before this fixture transport is invoked.
+	if _, _, err := m.Remote.SourcePage(context.Background(), s.snapshot(), "https://example.com/start", nil); err == nil || calls != 1 {
 		t.Fatal("redirect escaped", err, calls)
 	}
 }
