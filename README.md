@@ -149,7 +149,7 @@ python tools/m4/backup_restore.py backup --source .local/rehearsal/candidate --o
 python tools/m4/backup_restore.py restore --source .local/rehearsal/backup --out .local/rehearsal/restored
 ```
 
-备份源目录包含 `library.db`、`covers/` 和 `collected/`。SQLite 备份包含已提交的 WAL；封面与采集文件另按 SHA-256 验证，备份时须停止内容任务，避免跨数据库/文件的并发变化。恢复先检查所有指纹，再写入全新目录并复核数据库完整性、外键和全部表计数，绝不覆盖现有库。原始只读 TXT 不重复装入备份，必须保留其独立副本和指纹。恢复后用同一正文挂载启动服务，回读个人记录和正文，重启后再次核对。
+备份源目录包含 `library.db`、`covers/` 和 `collected/`。SQLite 备份包含已提交的 WAL；封面与采集文件另按 SHA-256 验证，备份时须停止内容任务，避免跨数据库/文件的并发变化。恢复先检查所有指纹，再写入全新目录、启用服务要求的 WAL，并复核数据库完整性、外键和全部表计数，绝不覆盖现有库。原始只读 TXT 不重复装入备份，必须保留其独立副本和指纹。恢复后用同一正文挂载启动服务，回读个人记录和正文，重启后再次核对。
 
 `verify_personal.mjs` 只读核对默认读者的收藏、进度、本人票和历史读者隔离，再读取一部作品与封面。恢复/重启后重新运行并加 `--baseline <上次personal-check.json>`，要求个人状态及正文/封面摘要一致。缺少的本机正文可先通过运维只读下载到独立目录，再用准备工具的 `--extra-novels <目录>` 补齐，仍须匹配快照指纹。
 

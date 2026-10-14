@@ -29,6 +29,7 @@ class BackupTests(unittest.TestCase):
                 restore(root / "backup", root / "restored")
                 with closing(sqlite3.connect(root / "restored/library.db")) as result:
                     self.assertEqual(result.execute("SELECT * FROM progress").fetchall(), [(1, 25)])
+                    self.assertEqual(result.execute("PRAGMA journal_mode").fetchone()[0], "wal")
                 self.assertEqual((root / "restored/collected/book.txt").read_text(encoding="utf-8"), "新采集正文")
                 self.assertEqual((root / "restored/covers/image.png").read_bytes(), b"synthetic-image")
                 with self.assertRaises(FileExistsError):

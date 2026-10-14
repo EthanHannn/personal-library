@@ -90,11 +90,18 @@ def restore(source, output):
             raise ValueError("Restored fingerprint mismatch")
     for folder in ("covers", "collected"):
         (output / folder).mkdir(exist_ok=True)
+    # Archive a standalone DB, then activate the service's required mode only
+    # after byte-for-byte restoration has passed. This changes the DB header;
+    # it must not be mistaken for an asset-copy fingerprint failure.
+    with closing(sqlite3.connect(output / "library.db")) as db:
+        if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] != "wal":
+            raise ValueError("Restored database could not enable WAL")
     observed = inspect(output / "library.db")
     if observed != report["database"]:
         raise ValueError("Restored database differs from backup")
     write_json(output / "restore.json", {"complete": True, "at": datetime.now(timezone.utc).isoformat(),
-                                        "verifiedFiles": len(names), "database": observed})
+                                        "verifiedFiles": len(names), "database": observed, "journalMode": "wal",
+                                        "restoredDatabaseSha256": fingerprint(output / "library.db")["sha256"]})
     return observed
 
 
