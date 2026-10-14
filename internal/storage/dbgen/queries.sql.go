@@ -1048,6 +1048,31 @@ func (q *Queries) SearchChapters(ctx context.Context, arg SearchChaptersParams) 
 	return items, nil
 }
 
+const setVote = `-- name: SetVote :exec
+INSERT INTO votes(id,type,reader_id,book_id,created_at) VALUES(?,?,?,?,?)
+ON CONFLICT(reader_id,book_id) DO UPDATE SET type=excluded.type
+WHERE votes.type<>excluded.type
+`
+
+type SetVoteParams struct {
+	ID        string
+	Type      string
+	ReaderID  string
+	BookID    int64
+	CreatedAt int64
+}
+
+func (q *Queries) SetVote(ctx context.Context, arg SetVoteParams) error {
+	_, err := q.db.ExecContext(ctx, setVote,
+		arg.ID,
+		arg.Type,
+		arg.ReaderID,
+		arg.BookID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const shelfWindow = `-- name: ShelfWindow :many
 SELECT s.id AS entry_id, s.added_at, b.id, b.title, b.author, b.tag1, b.tag2,
        b.word_count, b.chapter_count, b.has_content, r.score,
@@ -1132,4 +1157,81 @@ func (q *Queries) ShelfWindow(ctx context.Context, arg ShelfWindowParams) ([]She
 		return nil, err
 	}
 	return items, nil
+}
+
+const voteDeltas = `-- name: VoteDeltas :one
+SELECT CAST(COALESCE(sum((type='XIANCAO')-COALESCE(imported_type='XIANCAO',0)),0) AS INTEGER) AS xiancao,
+       CAST(COALESCE(sum((type='LIANGCAO')-COALESCE(imported_type='LIANGCAO',0)),0) AS INTEGER) AS liangcao,
+       CAST(COALESCE(sum((type='GANCAO')-COALESCE(imported_type='GANCAO',0)),0) AS INTEGER) AS gancao,
+       CAST(COALESCE(sum((type='KUCAO')-COALESCE(imported_type='KUCAO',0)),0) AS INTEGER) AS kucao,
+       CAST(COALESCE(sum((type='DUCAO')-COALESCE(imported_type='DUCAO',0)),0) AS INTEGER) AS ducao,
+       CAST(COALESCE(sum(type NOT IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')
+         OR COALESCE(imported_type NOT IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO'),0)),0) AS INTEGER) AS invalid
+FROM votes WHERE book_id=?1
+`
+
+type VoteDeltasRow struct {
+	Xiancao  int64
+	Liangcao int64
+	Gancao   int64
+	Kucao    int64
+	Ducao    int64
+	Invalid  int64
+}
+
+func (q *Queries) VoteDeltas(ctx context.Context, bookID int64) (VoteDeltasRow, error) {
+	row := q.db.QueryRowContext(ctx, voteDeltas, bookID)
+	var i VoteDeltasRow
+	err := row.Scan(
+		&i.Xiancao,
+		&i.Liangcao,
+		&i.Gancao,
+		&i.Kucao,
+		&i.Ducao,
+		&i.Invalid,
+	)
+	return i, err
+}
+
+const voteSnapshot = `-- name: VoteSnapshot :one
+SELECT s.book_id, s.popularity, s.total_score, s.score, s.xiancao_count, s.liangcao_count, s.gancao_count, s.kucao_count, s.ducao_count, v.type AS my_vote
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+LEFT JOIN votes v ON v.book_id=b.id AND v.reader_id=?1
+WHERE b.id=?2 AND b.status='APPROVED'
+`
+
+type VoteSnapshotParams struct {
+	ReaderID string
+	BookID   int64
+}
+
+type VoteSnapshotRow struct {
+	BookID        int64
+	Popularity    int64
+	TotalScore    int64
+	Score         float64
+	XiancaoCount  int64
+	LiangcaoCount int64
+	GancaoCount   int64
+	KucaoCount    int64
+	DucaoCount    int64
+	MyVote        sql.NullString
+}
+
+func (q *Queries) VoteSnapshot(ctx context.Context, arg VoteSnapshotParams) (VoteSnapshotRow, error) {
+	row := q.db.QueryRowContext(ctx, voteSnapshot, arg.ReaderID, arg.BookID)
+	var i VoteSnapshotRow
+	err := row.Scan(
+		&i.BookID,
+		&i.Popularity,
+		&i.TotalScore,
+		&i.Score,
+		&i.XiancaoCount,
+		&i.LiangcaoCount,
+		&i.GancaoCount,
+		&i.KucaoCount,
+		&i.DucaoCount,
+		&i.MyVote,
+	)
+	return i, err
 }

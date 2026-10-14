@@ -1,6 +1,27 @@
 -- name: CurrentReader :one
 SELECT id, username, nickname FROM readers WHERE portal_user = ?;
 
+-- name: VoteSnapshot :one
+SELECT s.*, v.type AS my_vote
+FROM books b JOIN rating_snapshots s ON s.book_id=b.id
+LEFT JOIN votes v ON v.book_id=b.id AND v.reader_id=sqlc.arg(reader_id)
+WHERE b.id=sqlc.arg(book_id) AND b.status='APPROVED';
+
+-- name: VoteDeltas :one
+SELECT CAST(COALESCE(sum((type='XIANCAO')-COALESCE(imported_type='XIANCAO',0)),0) AS INTEGER) AS xiancao,
+       CAST(COALESCE(sum((type='LIANGCAO')-COALESCE(imported_type='LIANGCAO',0)),0) AS INTEGER) AS liangcao,
+       CAST(COALESCE(sum((type='GANCAO')-COALESCE(imported_type='GANCAO',0)),0) AS INTEGER) AS gancao,
+       CAST(COALESCE(sum((type='KUCAO')-COALESCE(imported_type='KUCAO',0)),0) AS INTEGER) AS kucao,
+       CAST(COALESCE(sum((type='DUCAO')-COALESCE(imported_type='DUCAO',0)),0) AS INTEGER) AS ducao,
+       CAST(COALESCE(sum(type NOT IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO')
+         OR COALESCE(imported_type NOT IN ('XIANCAO','LIANGCAO','GANCAO','KUCAO','DUCAO'),0)),0) AS INTEGER) AS invalid
+FROM votes WHERE book_id=sqlc.arg(book_id);
+
+-- name: SetVote :exec
+INSERT INTO votes(id,type,reader_id,book_id,created_at) VALUES(?,?,?,?,?)
+ON CONFLICT(reader_id,book_id) DO UPDATE SET type=excluded.type
+WHERE votes.type<>excluded.type;
+
 -- name: ListBooks :many
 SELECT b.id, b.title, b.author, b.tag1, b.tag2, b.word_count, b.chapter_count,
        b.has_content, s.score

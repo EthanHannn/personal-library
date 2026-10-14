@@ -58,6 +58,9 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 	reading := readingAPI{store: store, content: api, readerID: user.ID}
 	collections := collectionAPI{store: store, readerID: user.ID}
 	catalog := catalogAPI{store: store}
+	votes := voteAPI{store: store, readerID: user.ID}
+	mux.HandleFunc("GET /api/v1/books/{id}/vote", votes.vote)
+	mux.HandleFunc("PUT /api/v1/books/{id}/vote", votes.vote)
 	mux.HandleFunc("GET /api/v1/books", catalog.books)
 	mux.HandleFunc("GET /api/v1/categories", catalog.categories)
 	mux.HandleFunc("GET /api/v1/home", collections.home)
@@ -102,7 +105,12 @@ func New(ctx context.Context, db *storage.Database, r *reader.Reader, config gat
 			apiError(w, err)
 			return
 		}
-		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, "inShelf": inShelf != 0, "progress": progress})
+		vote, err := store.VoteSummary(r.Context(), user.ID, id)
+		if err != nil {
+			apiError(w, err)
+			return
+		}
+		jsonResponse(w, map[string]any{"book": Book{ID: b.ID, Title: b.Title, Author: b.Author, Tag1: b.Tag1, Tag2: b.Tag2, WordCount: b.WordCount, ChapterCount: b.ChapterCount, HasContent: b.HasContent == 1, Score: b.Score, Intro: b.Intro}, "inShelf": inShelf != 0, "progress": progress, "vote": vote})
 	})
 	mux.Handle("/", static)
 	return api.Handler(config, mux, "library"), nil
