@@ -300,6 +300,8 @@ func (m *Manager) fetchSourceTOC(ctx context.Context, s SourceSnapshot, raw stri
 }
 
 var pageSuffix = regexp.MustCompile(`(?:[（(]\s*(?:第\s*)?\d+\s*(?:/\s*\d+\s*|页\s*)?[）)]|_\d+)$`)
+var bookTitleSuffix = regexp.MustCompile(`[-—–]\s*《[^》]{1,100}》$`)
+var chapterPageCounter = regexp.MustCompile(`^第[（(]\d+/\d+[）)]页$`)
 
 func sourceIdentity(s string) string {
 	return strings.Map(func(r rune) rune {
@@ -310,7 +312,8 @@ func sourceIdentity(s string) string {
 	}, strings.TrimSpace(s))
 }
 func chapterIdentity(s string) string {
-	return sourceIdentity(pageSuffix.ReplaceAllString(strings.TrimSpace(s), ""))
+	s = bookTitleSuffix.ReplaceAllString(strings.TrimSpace(s), "")
+	return sourceIdentity(pageSuffix.ReplaceAllString(s, ""))
 }
 func hashBytes(raw []byte) string { sum := sha256.Sum256(raw); return hex.EncodeToString(sum[:]) }
 func (m *Manager) fetchSourceChapter(ctx context.Context, s SourceSnapshot, c sourceChapter, catalog map[string]bool) (string, string, error) {
@@ -339,7 +342,7 @@ func (m *Manager) fetchSourceChapter(ctx context.Context, s SourceSnapshot, c so
 		lines := []string{}
 		for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
 			line = strings.TrimSpace(line)
-			drop := line == ""
+			drop := line == "" || chapterPageCounter.MatchString(line)
 			for _, noise := range s.Config.Chapter.DropLines {
 				if line == noise {
 					drop = true

@@ -1,0 +1,62 @@
+{
+  "format": "personal-library/source-pack@1",
+  "sources": [
+    {
+      "config": {
+        "name": "笔趣阁5",
+        "group": "男频",
+        "kind": "html",
+        "baseUrl": "https://www.biquge5.com/",
+        "allowedHosts": ["www.biquge5.com"],
+        "charset": "utf-8",
+        "intervalMs": 5000,
+        "search": {
+          "url": "https://www.biquge5.com/search.php?q={query}",
+          "items": ".box.hot .col-md-6 > dl",
+          "title": {"selector": "dt img", "attr": "alt"},
+          "author": {"selector": "dd.book_other:nth-of-type(2) span"},
+          "link": {"selector": "dt a", "attr": "href"}
+        },
+        "book": {
+          "title": {"selector": "meta[property=\"og:novel:book_name\"]", "attr": "content"},
+          "author": {"selector": "meta[property=\"og:novel:author\"]", "attr": "content"},
+          "intro": {"selector": "meta[property=\"og:description\"]", "attr": "content"},
+          "category": {"selector": "meta[property=\"og:novel:category\"]", "attr": "content"},
+          "status": {"selector": "meta[property=\"og:novel:status\"]", "attr": "content"}
+        },
+        "toc": {
+          "items": ".book_list2 ul.row > li > a[href]",
+          "title": {"selector": "."},
+          "link": {"selector": ".", "attr": "href"},
+          "next": {"selector": ".page-item.active + .page-item a.page-link[href]", "attr": "href"}
+        },
+        "chapter": {
+          "title": {"selector": "h1"},
+          "content": {"selector": "article.font_max"},
+          "next": {"selector": "a#next1", "attr": "href"}
+        }
+      },
+      "sample": {
+        "url": "https://www.biquge5.com/0_98/",
+        "title": "大奉打更人",
+        "author": "卖报小郎君",
+        "query": "大奉打更人",
+        "searchChecks": [
+          {
+            "query": "仙工开物",
+            "title": "仙工开物",
+            "author": "蛊真人",
+            "url": "https://www.biquge5.com/9_9573/"
+          }
+        ]
+      },
+      "provenance": {
+        "repository": "https://github.com/spiritLHLS/novel-downloader",
+        "revision": "d22e40b075be342745b6f354d472b90640827e2a",
+        "path": "src/novel_downloader/plugins/sites/biquge5/searcher.py",
+        "license": "MIT",
+        "notes": "参考上游 GET 搜索入口，按现站页面编写书屋 CSS 规则。站点章名附加作品名；书屋需先支持该章名归一化。上线前须在生产应用验证完整目录、首章三页、连续搜索。"
+      }
+    }
+  ]
+}

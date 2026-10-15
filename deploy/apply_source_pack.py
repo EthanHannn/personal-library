@@ -152,10 +152,18 @@ def apply(pack_path, expected_sha256, base, origin, report_dir):
         report["enabledCheck"] = second
         if not passed:
             raise RuntimeError("Source sample failed after enabling")
-        passed, search = checked_search(client, source, sample)
-        report["searchIdentity"] = search
-        if not passed:
-            raise RuntimeError("Search did not return exactly one matching title, author and URL")
+        search_cases = ([sample, *sample.get("searchChecks", []), sample, sample]
+                        if sample.get("query") else [])
+        if len(search_cases) > 6:
+            raise ValueError("Too many search acceptance cases")
+        report["searchIdentity"] = []
+        for case in search_cases:
+            if any(not case.get(key) for key in ("query", "title", "author", "url")):
+                raise ValueError("Search acceptance case is incomplete")
+            passed, search = checked_search(client, source, case)
+            report["searchIdentity"].append({"query": case["query"], **search})
+            if not passed:
+                raise RuntimeError("Repeated search did not return exactly one matching title, author and URL")
         final = next(item for item in client.request("/api/v1/manage/sources")["sources"]
                      if item["id"] == source["id"])
         if not final["enabled"] or final["version"] != final["checkVersion"]:

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,15 @@ type BlockedError struct {
 }
 
 func (e *BlockedError) Error() string { return e.Message }
+
+type sourceHTTPStatusError struct{ Code int }
+
+func (e *sourceHTTPStatusError) Error() string { return fmt.Sprintf("来源返回 HTTP %d", e.Code) }
+
+func retryableSourceStatus(err error) bool {
+	var status *sourceHTTPStatusError
+	return errors.As(err, &status) && (status.Code == 500 || status.Code == 502 || status.Code == 503 || status.Code == 504)
+}
 
 type Remote struct {
 	DB       *storage.Database
@@ -56,6 +66,11 @@ func (r *Remote) SourcePage(ctx context.Context, s SourceSnapshot, raw string, f
 	} // Fixture transport; production always has a nonzero interval.
 	final := raw
 	body, err := r.fetch(ctx, s.ID, raw, form, 4<<20, interval, func(u *url.URL) bool { _, err := sourceURL(s.Config, s.Config.BaseURL, u.String()); return err == nil }, &final)
+	// A transient origin error can interrupt a long catalog. Retry one GET
+	// through the same per-source request limiter; never replay a form POST.
+	if len(form) == 0 && retryableSourceStatus(err) {
+		body, err = r.fetch(ctx, s.ID, raw, form, 4<<20, interval, func(u *url.URL) bool { _, err := sourceURL(s.Config, s.Config.BaseURL, u.String()); return err == nil }, &final)
+	}
 	return body, final, err
 }
 func (r *Remote) fetch(ctx context.Context, source, raw string, form url.Values, limit int64, interval time.Duration, allowed func(*url.URL) bool, final *string) ([]byte, error) {
@@ -102,7 +117,7 @@ func (r *Remote) fetch(ctx context.Context, source, raw string, form url.Values,
 		return nil, &BlockedError{Message: fmt.Sprintf("来源限制访问（HTTP %d），已暂停请求", res.StatusCode), Until: until}
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("来源返回 HTTP %d", res.StatusCode)
+		return nil, &sourceHTTPStatusError{Code: res.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {

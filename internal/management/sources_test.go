@@ -58,6 +58,27 @@ func servePages(m *Manager, pages map[string]string, calls map[string]int) {
 		return response(200, []byte(body)), nil
 	})
 }
+func TestSourcePageRetriesOneTransientGET(t *testing.T) {
+	m, _ := fixture(t)
+	s := ruleFixture(t, m, "html")
+	calls := 0
+	m.Remote.Client.Transport = transport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return response(500, nil), nil
+		}
+		return response(200, []byte("recovered")), nil
+	})
+	body, _, err := m.Remote.SourcePage(context.Background(), s.snapshot(), "https://example.com/book", nil)
+	if err != nil || string(body) != "recovered" || calls != 2 {
+		t.Fatal(string(body), calls, err)
+	}
+	calls = 0
+	_, _, err = m.Remote.SourcePage(context.Background(), s.snapshot(), "https://example.com/search", url.Values{"q": {"test"}})
+	if err == nil || calls != 1 {
+		t.Fatal("POST was retried", calls, err)
+	}
+}
 func TestSourceRulesAndPublicNetworkValidation(t *testing.T) {
 	for _, tpl := range SourceTemplates() {
 		if err := validateSource(tpl.Config); err != nil {
@@ -268,6 +289,24 @@ func TestSourcePaginationAndIdentityFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+func TestChapterBookSuffixAndPageCounter(t *testing.T) {
+	m, _ := fixture(t)
+	s := pagedSource(t, m)
+	pages := map[string]string{
+		"/c1":   `<h1>第一章 开始-《测试长篇》</h1><div id="content">第(1/2)页<br>第一段。</div><a class="next" href="/c1-2">下一页</a>`,
+		"/c1-2": `<h1>第一章 开始-《测试长篇》</h1><div id="content">第(2/2)页<br>第二段。</div><a class="next" href="/c2">下一章</a>`,
+	}
+	servePages(m, pages, map[string]int{})
+	chapter := sourceChapter{URL: "https://example.com/c1", Title: "第一章 开始"}
+	content, _, err := m.fetchSourceChapter(context.Background(), s.snapshot(), chapter, map[string]bool{"https://example.com/c2": true})
+	if err != nil || content != "第一段。\n第二段。" {
+		t.Fatal(content, err)
+	}
+	chapter.Title = "第二章 继续"
+	if _, _, err := m.fetchSourceChapter(context.Background(), s.snapshot(), chapter, nil); err == nil {
+		t.Fatal("accepted a different chapter title")
 	}
 }
 func TestSearchIsolationAndSourceChecks(t *testing.T) {
