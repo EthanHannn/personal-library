@@ -6,7 +6,7 @@
 
 个人小说书屋。采用 Go + SQLite + Vue 3 / Vite 的独立重写项目，优先改善阅读流畅度、打开速度与服务器占用。
 
-M0–M2 阅读主链及 M3 首页/书架、检索、本人投票、本地推荐、个人中心、书库管理、TXT 导入和真实封面任务已实现。起点采集支持公开免费章节的预览入库与断点恢复；实际访问仍可能被站点验证阻止。现有线上书屋仍由 [zhixuan-library](https://github.com/EthanHannn/zhixuan-library) 提供服务，真实数据本机迁移已通过对账，生产替换尚未完成。评论/回复、失效原站入口和个人数据导出不在当前范围内。
+M0–M2 阅读主链及 M3 首页/书架、检索、本人投票、本地推荐、个人中心、书库管理、TXT 导入和真实封面任务已实现。起点采集支持公开免费章节的预览入库与断点恢复；实际访问仍可能被站点验证阻止。新版 `aa33b95` 已于 2026-10-14 替换线上旧版，真实数据迁移与恢复验收见 Obsidian 的「个人小说书屋-M5线上替换与部署验收-20261014」。评论/回复、失效原站入口和个人数据导出不在当前范围内。
 
 ## 开发
 
@@ -211,6 +211,8 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 
 ## 网络采集与添加书源
 
+当前生产库启用了起点和笔趣阁365；后者只支持作品链接采集，搜索连续使用时会返回空结果，因此未启用搜索规则。笔趣阁365的已审阅配置保存在 `deploy/source-packs/biquge365-link-20261015.json`，经 Windows/WSL Linux 独立库和生产环境的作品、目录、首章样本检查通过。2026-10-14 的另外 5 个 GitHub 候选只在独立测试库验证，生产服务器对其样本站点的访问仍不稳定；用户无需为这些候选手工抄写规则。
+
 进入「书库管理 → 我的书源 → 添加书源」，可从网页 CSS、JSON 接口或站点模板开始，也可在说明区域粘贴本项目格式的完整 JSON。填写站点域名、编码、请求间隔和 search/book/toc/chapter 规则后保存，再用样本作品链接检查详情、目录和首章。支持编辑、启停和版本冲突检测；仅启停的起点内置适配器继续保留。
 
 「网络采集」提供作品链接与多源搜书两种入口。搜书每次最多 8 个源、每源前 20 个候选，按书名和作者比较来源；选择后生成采集任务，最终仍需确认预览才会入库。任务保存创建时的规则、目录指纹和逐章检查点，重试不会改用编辑后的规则。遇到目录变化需新建任务。旧版已有的可读正文、收藏、投票和阅读进度不会因采集被覆盖；自动追更、换源替换和进度映射尚未提供。
@@ -224,13 +226,15 @@ node tools/m0/measure.mjs --target go --base http://127.0.0.1:16871 --container 
 已审阅并改写成本项目格式的书源包，可批量加载到本地独立库并验证：
 
 ```powershell
-node tools/m3/load-source-pack.mjs --pack .local/reviewed-sources.json --out .local/source-check-report.json
+node tools/m3/load-source-pack.mjs --pack deploy/source-packs/biquge365-link-20261015.json --out .local/source-check-report.json
 node --test tools/m3/load-source-pack.test.mjs
 ```
 
 工具默认访问 `http://127.0.0.1:16871`，使用合成读者 `owner` 和测试 Origin；只允许回环 HTTP 服务。包的 `format` 为 `personal-library/source-pack@1`，`sources` 为数组；每项含完整 `config`、`sample`（`url/title/author`，支持搜索时还需 `query`）及 `provenance`（`repository/revision/path`，建议补充 `license/notes`）。上游原文件需先审阅和适配，工具不会执行脚本或自动转换阅读书源。
 
 工具复用相同配置，遇到同名不同规则时报告冲突；逐源检查详情、目录、首章及可选搜索，并比对预期书名/作者。检查失败会停用该配置，报告保留任务、规则版本、错误和最终启停状态；返回码 1 表示有未通过项，须查看报告。搜索检查会确认有候选，目标作品是否包含其中仍应在多源搜索结果中核对。检查不生成入库任务，也不承诺全本完整。原始书源、配置包和在线报告保存在 `.local/`，具体仓库版本、可用源和环境差异记入 Obsidian。
+
+生产书源使用白名单运维命令 `aliyun-ecs-ops.sh library-source-pack <已审阅的单源配置.json>` 安装。入口和在线检查逻辑分别在 `deploy/install_source_pack_command.py`、`deploy/apply_source_pack.py`；先停用保存、检查样本，启用后再次检查，失败则停用并留报告。该命令只处理书源配置，不能代替首次生产迁移命令或用于安装未审阅的上游原始规则。
 
 ## 数据与项目文档
 

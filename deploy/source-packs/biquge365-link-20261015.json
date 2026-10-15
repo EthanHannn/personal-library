@@ -1,0 +1,46 @@
+{
+  "format": "personal-library/source-pack@1",
+  "sources": [
+    {
+      "config": {
+        "name": "笔趣阁365",
+        "group": "男频",
+        "kind": "html",
+        "baseUrl": "https://www.biquge365.net/",
+        "allowedHosts": ["www.biquge365.net"],
+        "charset": "utf-8",
+        "intervalMs": 5000,
+        "book": {
+          "title": {"selector": "meta[property=\"og:novel:book_name\"]", "attr": "content"},
+          "author": {"selector": "meta[property=\"og:novel:author\"]", "attr": "content"},
+          "intro": {"selector": "meta[property=\"og:description\"]", "attr": "content"},
+          "category": {"selector": "meta[property=\"og:novel:category\"]", "attr": "content"},
+          "toc": {"selector": ".gongneng a[href^=\"/newbook/\"]", "attr": "href"},
+          "status": {"selector": ".xinxi > span:nth-child(3)", "trimPrefix": "状态："}
+        },
+        "toc": {
+          "items": ".border ul li a",
+          "title": {"selector": "."},
+          "link": {"selector": ".", "attr": "href"}
+        },
+        "chapter": {
+          "title": {"selector": "#neirong h1"},
+          "content": {"selector": "#txt"},
+          "dropLines": ["一秒记住【笔趣阁】biquge365.net，更新快，无弹窗！"]
+        }
+      },
+      "sample": {
+        "url": "https://www.biquge365.net/book/39884/",
+        "title": "大梦主",
+        "author": "忘语"
+      },
+      "provenance": {
+        "repository": "https://github.com/freeok/so-novel",
+        "revision": "76150dbd2827b4de97cde83cffb3ee367bc9be3a",
+        "path": "bundle/rules/main.json",
+        "license": "AGPL-3.0",
+        "notes": "站点发现参考上游；按当前页面重新编写书屋 CSS 规则。2026-10-15 Windows 和 WSL Linux 的作品、目录、首章小样本通过。搜索连续使用时会返回空结果，暂关闭搜索；仅启用作品链接采集。生产服务器只完成 HTTP 200 探测，须以生产应用样本检查为准。"
+      }
+    }
+  ]
+}
